@@ -1,0 +1,63 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: npc_postgres
+    profiles: ["db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - npc_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - npc-service-net
+
+  neo4j:
+    image: neo4j:5.22-community
+    container_name: npc_no4j
+    profiles: ["graph"]
+    restart: unless-stopped
+    environment:
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      NEO4J_AUTH: "${NEO4J_USER}/${NEO4J_PASSWORD}"
+      NEO4J_PLUGINS: ["apoc"]
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "${NEO4J_HTTP_PORT}:75474"
+      - "${NEO4J_BOLT_PORT}:7687"
+    volumes:
+      - npc_neo4j_data:/data
+      - npc_neo4j_logs:/logs
+      - npc_neo4j_plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "bin/cypher-shell -a bolt://localhost:7687 -u $$NEO4J_USER -p $$NEO4J_PASSWORD 'RETURN 1;' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - npc-service-net
+
+volumes:
+  npc_pg_data:
+  npc_neo4j_data:
+  npc_neo4j_logs:
+  npc_neo4j_plugins:
+
+networks:
+  npc--service-net:
+    driver: bridge
