@@ -5,3 +5,4 @@
 
 backend/Npc.Api/bin/**
 backend/Npc.Api/obj/**
+backend/Npc.Api/appsettings.*.json
