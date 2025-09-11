@@ -30,6 +30,8 @@ namespace Npc.Api.Controllers
         public async Task<IActionResult> Branch([FromBody] BranchCreateRequest req, CancellationToken ct)
         {
             await svc.AddBranchAsync(req.FromUtteranceId, req.ToUtteranceId, ct);
+            if (req.Weight is not null)
+                await svc.SetBranchWeightAsync(req.FromUtteranceId, req.ToUtteranceId, req.Weight.Value, ct);
             return NoContent();
         }
 
@@ -65,7 +67,7 @@ namespace Npc.Api.Controllers
             var ok = await svc.SoftDeleteUtteranceAsync(utteranceId, ct);
             return ok ? NoContent() : NotFound();
         }
-        
+
         [HttpGet("{conversationId:guid}/graph")]
         public async Task<ActionResult<GraphResponse>> GetGraph(
             [FromRoute] Guid conversationId,
@@ -74,6 +76,22 @@ namespace Npc.Api.Controllers
         {
             var graph = await svc.GetGraphAsync(conversationId, depth, ct);
             return graph is null ? NotFound() : Ok(graph);
+        }
+
+
+
+        [HttpPost("{conversationId:guid}/random-path")]
+        public async Task<ActionResult<PathResponse>> RandomPath([FromRoute] Guid conversationId, [FromQuery] int maxDepth = 15, CancellationToken ct = default)
+        {
+            var path = await svc.GetRandomPathAsync(conversationId, maxDepth, ct);
+            return path is null ? NotFound() : Ok(path);
+        }
+        
+        [HttpPost("branch/weight")]
+        public async Task<IActionResult> SetBranchWeight([FromQuery] Guid fromId, [FromQuery] Guid toId, [FromQuery] double weight, CancellationToken ct = default)
+        {
+            await svc.SetBranchWeightAsync(fromId, toId, weight, ct);
+            return NoContent();
         }
     }
 }

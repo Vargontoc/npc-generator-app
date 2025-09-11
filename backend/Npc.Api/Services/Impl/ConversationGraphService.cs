@@ -7,14 +7,14 @@ namespace Npc.Api.Services.Impl
     {
         public async Task AddBranchAsync(Guid fromUtteranceId, Guid toUtteranceId, CancellationToken ct)
         {
-            var cypher = """
+            const string cypher = """
                 MATCH (a:Utterance {id:$fromId}), (b:Utterance {id:$toId})
                 WHERE coalesce(a.deleted,false)=false AND coalesce(b.deleted,false)=false
-                MERGE (a)-[:BRANCH_TO]->(b)
+                MERGE (a)-[r:BRANCH_TO]->(b)
+                ON CREATE SET r.weight = 1.0
                 """;
             await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
-            await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
-            {
+            await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new {
                 fromId = fromUtteranceId.ToString(),
                 toId = toUtteranceId.ToString()
             }));
@@ -282,6 +282,149 @@ namespace Npc.Api.Services.Impl
                 rels
             );
         }
+
+        public async Task<PathResponse?> GetRandomPathAsync(Guid conversationId, int maxDepth, CancellationToken ct)
+        {
+            if (maxDepth is < 1 or > 50) maxDepth = 20;
+
+    // Traemos subgrafo (nodos + relaciones) igual que graph pero sin profundizar infinito
+    var cypher = """
+        MATCH (c:Conversation {id:$cid})
+        OPTIONAL MATCH (c)-[:ROOT]->(root:Utterance)
+        WITH c, root
+        OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..50]->(u:Utterance)
+        WITH c, root, collect(DISTINCT u) AS us
+        WITH c, CASE WHEN root IS NULL THEN us ELSE [root] + us END AS rawNodes
+        WITH c, [n IN rawNodes WHERE n IS NOT NULL] AS nodes
+        OPTIONAL MATCH (a:Utterance)-[r:NEXT|BRANCH_TO]->(b:Utterance)
+        WHERE a IN nodes AND b IN nodes
+        RETURN c.id AS cid,
+               c.title AS title,
+               nodes,
+               collect({ from:a.id, to:b.id, type:type(r), weight:r.weight }) AS rels
+        """;
+
+    await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read));
+    var record = await session.ExecuteReadAsync(async tx =>
+    {
+        var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString() });
+        return await cursor.SingleAsync();
+    });
+    if (record is null) return null;
+
+    // Map nodes
+    var nodeList = record["nodes"].As<List<object>>().Select(o =>
+    {
+        var m = (IDictionary<string, object>)o;
+        Guid.TryParse(m["id"]?.ToString(), out var id);
+        return new {
+            Id = id,
+            Text = m["text"]?.ToString() ?? "",
+            CharacterId = ParseGuid(m["characterId"]?.ToString()),
+            Deleted = (bool?)m["deleted"] ?? false
+        };
+    }).Where(n => !n.Deleted).ToDictionary(n => n.Id);
+
+    // Relaciones
+    var edges = record["rels"].As<List<object>>().Select(o =>
+    {
+        var m = (IDictionary<string, object>)o;
+        Guid.TryParse(m["from"]?.ToString(), out var from);
+        Guid.TryParse(m["to"]?.ToString(), out var to);
+        var type = m["type"]?.ToString() ?? "";
+        var weight = 1.0;
+        if (type == "BRANCH_TO" && m.TryGetValue("weight", out var w) && w is not null && double.TryParse(w.ToString(), out var dw))
+            weight = dw <= 0 ? 0.01 : dw;
+        return new { From = from, To = to, Type = type, Weight = weight };
+    }).ToList();
+
+    // Encontrar root
+    // Root = nodo que tiene relación :ROOT desde Conversation (garantizado que llega en nodes si existe)
+    // Alternativa: nodo sin entradas NEXT desde otro
+    Guid? rootId = null;
+    if (nodeList.Count > 0)
+    {
+        var targets = edges.Where(e => e.Type == "NEXT").Select(e => e.To).ToHashSet();
+        rootId = nodeList.Keys.FirstOrDefault(k => !targets.Contains(k));
+        if (rootId == Guid.Empty) rootId = nodeList.Keys.First();
+    }
+    if (rootId is null) return new PathResponse(conversationId, record["title"].As<string>(), Array.Empty<UtteranceResponse>());
+
+    var path = new List<UtteranceResponse>();
+    var current = rootId.Value;
+    var depth = 0;
+    var rng = Random.Shared;
+
+    while (depth < maxDepth && nodeList.ContainsKey(current))
+    {
+        var n = nodeList[current];
+        path.Add(new UtteranceResponse(n.Id, n.Text, n.CharacterId));
+
+        // Siguiente directo (NEXT)
+        var nexts = edges.Where(e => e.Type == "NEXT" && e.From == current).Select(e => e.To).ToList();
+        var branches = edges.Where(e => e.Type == "BRANCH_TO" && e.From == current).ToList();
+
+        if (nexts.Count == 0 && branches.Count == 0)
+            break;
+
+        if (nexts.Count == 1 && branches.Count == 0)
+        {
+            current = nexts[0];
+        }
+        else
+        {
+            // Mezclar: prioridad a NEXT si existe, pero podemos permitir que branches compitan:
+            var candidates = new List<(Guid to, double w)>();
+
+            foreach (var nTo in nexts)
+                candidates.Add((nTo, 1.0)); // peso base
+
+            foreach (var b in branches)
+                candidates.Add((b.To, b.Weight));
+
+            var sum = candidates.Sum(c => c.w);
+            if (sum <= 0) break;
+            var roll = rng.NextDouble() * sum;
+            double acc = 0;
+            Guid chosen = candidates[0].to;
+            foreach (var c in candidates)
+            {
+                acc += c.w;
+                if (roll <= acc)
+                {
+                    chosen = c.to;
+                    break;
+                }
+            }
+            current = chosen;
+        }
+
+        depth++;
+    }
+
+    return new PathResponse(conversationId, record["title"].As<string>(), path.ToArray());
+        }
+
+        public async Task SetBranchWeightAsync(Guid fromUtteranceId, Guid toUtteranceId, double? weight, CancellationToken ct)
+        {
+             if (weight <= 0) weight = 0.01;
+            const string cypher = """
+                MATCH (a:Utterance {id:$fromId})-[r:BRANCH_TO]->(b:Utterance {id:$toId})
+                SET r.weight = $w
+                RETURN r.weight AS w
+                """;
+            await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+            var rec = await session.ExecuteWriteAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(cypher, new {
+                    fromId = fromUtteranceId.ToString(),
+                    toId = toUtteranceId.ToString(),
+                    w = weight
+                });
+                return await cursor.SingleAsync();
+            }) ?? throw new InvalidOperationException("Branch relation not found");
+        }
+
         private async Task<UtteranceResponse> RunCreateUtterance(string cypher, Guid conversationId, Guid id, string text, Guid? characterId)
         {
             await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
@@ -335,6 +478,7 @@ namespace Npc.Api.Services.Impl
                 tagsList
             );
         }
+
 
     }
 }
