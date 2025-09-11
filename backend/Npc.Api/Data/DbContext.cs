@@ -24,22 +24,43 @@ public class CharacterDbContext : DbContext
         character.Property(c => c.CreatedAt).IsRequired();
         character.Property(c => c.UpdateAt).IsRequired();
         character.HasIndex(c => c.Name);
+
+        // World
+        var world = modelBuilder.Entity<World>();
+        world.ToTable("worlds");
+        world.HasKey(w => w.Id);
+        world.Property(w => w.Name).IsRequired().HasMaxLength(120);
+        world.Property(w => w.Description).HasMaxLength(4000);
+        world.Property(w => w.CreatedAt).IsRequired();
+        world.Property(w => w.UpdateAt).IsRequired();
+
+        // Lore
+        var lore = modelBuilder.Entity<Lore>();
+        lore.ToTable("lores");
+        lore.HasKey(l => l.Id);
+        lore.Property(l => l.Title).IsRequired().HasMaxLength(200);
+        lore.Property(l => l.Text);
+        lore.Property(l => l.CreatedAt).IsRequired();
+        lore.Property(l => l.UpdateAt).IsRequired();
+        lore.HasOne(l => l.World).WithMany(w => w.LoreEntries).HasForeignKey(l => l.WorldId).OnDelete(DeleteBehavior.SetNull);
     }
     
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        foreach (var entry in ChangeTracker.Entries<Character>())
+        foreach (var entry in ChangeTracker.Entries())
         {
-            if (entry.State == EntityState.Added)
+            if (entry.Entity is BaseEntity)
             {
-                entry.Entity.CreatedAt = now;
-                entry.Entity.UpdateAt = now;
-            }
-            else if (entry.State == EntityState.Modified)
-            {
-                entry.Entity.UpdateAt = now;
+                if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+                {
+                    entry.CurrentValues["UpdateAt"] = now;
+                    if (entry.State == EntityState.Added)
+                    {
+                        entry.CurrentValues["CreatedAt"] = now;
+                    }
+                } 
             }
         }
 

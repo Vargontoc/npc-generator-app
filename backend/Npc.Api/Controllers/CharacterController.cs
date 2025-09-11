@@ -28,7 +28,7 @@ namespace Npc.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Character>> CreateCharacter([FromBody] CharacterCreateRequest req, CancellationToken ct = default)
+        public async Task<ActionResult<Character>> CreateCharacter([FromBody] CharacterRequest req, CancellationToken ct = default)
         {
             var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
             if (advisory.HasAdvisory)
@@ -49,7 +49,7 @@ namespace Npc.Api.Controllers
         }
 
         [HttpPut("{id:guid}")]
-        public async Task<ActionResult<Character>> UpdateCharacter([FromRoute] Guid id, [FromBody] CharacterUpdateRequest req, CancellationToken ct = default)
+        public async Task<ActionResult<Character>> UpdateCharacter([FromRoute] Guid id, [FromBody] CharacterRequest req, CancellationToken ct = default)
         {
             var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
             if (advisory.HasAdvisory)
