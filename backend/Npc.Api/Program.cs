@@ -34,6 +34,9 @@ using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CharacterDbContext>();
     db.Database.Migrate();
+
+    var driver = app.Services.GetRequiredService<IDriver>();
+    await Neo4jBootstrap.EnsureAsync(driver, CancellationToken.None);
 }
 
 app.Lifetime.ApplicationStopping.Register(() =>

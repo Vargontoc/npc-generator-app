@@ -21,7 +21,7 @@ namespace Npc.Api.Controllers
             return Ok(await svc.AddRootUtteranceAsync(conversationId, req.Text, req.CharacterId, ct));
         }
 
-        
+
         [HttpPost("utterances/{fromUtteranceId:guid}/next")]
         public async Task<ActionResult<UtteranceResponse>> AddNext(Guid fromUtteranceId, UtteranceCreateRequest req, CancellationToken ct)
             => Ok(await svc.AddNextUtterance(fromUtteranceId, req.Text, req.CharacterId, ct));
@@ -38,6 +38,32 @@ namespace Npc.Api.Controllers
         {
             var result = await svc.GetLinearPathAsync(conversationId, ct);
             return result is null ? NotFound() : Ok(result);
+        }
+        
+            
+        [HttpGet("utterances/{utteranceId:guid}")]
+        public async Task<ActionResult<UtteranceDetail>> GetUtterance(Guid utteranceId, CancellationToken ct)
+        {
+            var u = await svc.GetUtteranceAsync(utteranceId, ct);
+            return u is null ? NotFound() : Ok(u);
+        }
+
+        [HttpPatch("utterances/{utteranceId:guid}")]
+        public async Task<ActionResult<UtteranceDetail>> UpdateUtterance(
+            Guid utteranceId,
+            UtteranceUpdateRequest req,
+            CancellationToken ct)
+        {
+            var updated = await svc.UpdateUtteranceAsync(utteranceId, req.Text, req.Tags, req.Version, ct);
+            if (updated is null) return Conflict(new { error = "VersionMismatchOrDeleted" });
+            return Ok(updated);
+        }
+
+        [HttpDelete("utterances/{utteranceId:guid}")]
+        public async Task<IActionResult> SoftDelete(Guid utteranceId, CancellationToken ct)
+        {
+            var ok = await svc.SoftDeleteUtteranceAsync(utteranceId, ct);
+            return ok ? NoContent() : NotFound();
         }
     }
 }
