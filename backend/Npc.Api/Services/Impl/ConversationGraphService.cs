@@ -187,6 +187,101 @@ namespace Npc.Api.Services.Impl
             if (rec is null) return null;
             return MapDetail(rec);
         }
+        
+        public async Task<GraphResponse?> GetGraphAsync(Guid conversationId, int depth, CancellationToken ct)
+        {
+            if (depth is < 1 or > 25) depth = 10;
+
+            var cypher = """
+            MATCH (c:Conversation {id:$cid})
+            OPTIONAL MATCH (c)-[:ROOT]->(root:Utterance)
+            WITH c, root
+            CALL {
+            WITH root
+            OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..
+            """ + depth + """
+            ]->(u:Utterance)
+            WITH root, collect(DISTINCT u) AS collectedNodes
+            WITH CASE 
+                WHEN root IS NOT NULL 
+                THEN [root] + collectedNodes 
+                ELSE collectedNodes 
+            END AS rawNodes
+            WITH [n IN rawNodes WHERE n IS NOT NULL] AS nodes
+            CALL {
+                WITH nodes
+                UNWIND nodes AS a
+                MATCH (a)-[r:NEXT|BRANCH_TO]->(b)
+                WHERE b IN nodes
+                RETURN collect(DISTINCT { 
+                from: a.id, 
+                to: b.id, 
+                type: type(r), 
+                weight: r.weight 
+                }) AS rels
+            }
+            RETURN nodes, rels
+            }
+            RETURN c.id AS cid,
+                c.title AS title,
+                [n IN nodes | {
+                    id: n.id,
+                    text: n.text,
+                    characterId: n.characterId,
+                    deleted: coalesce(n.deleted, false),
+                    tags: coalesce(n.tags, [])
+                }] AS ns,
+                rels
+            """;
+
+
+            await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read));
+            var record = await session.ExecuteReadAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString(), cdepth = depth });
+                return await cursor.SingleAsync();
+            });
+
+            if (record is null) return null;
+
+            var nodes = record["ns"]
+                .As<List<object>>()
+                .Select(o =>
+                {
+                    var m = (IDictionary<string, object>)o;
+                    Guid.TryParse(m["id"]?.ToString(), out var id);
+                    Guid? charId = Guid.TryParse(m["characterId"]?.ToString(), out var cc) ? cc : null;
+                    var tags = (m["tags"] as IEnumerable<object> ?? Array.Empty<object>())
+                        .Select(t => t?.ToString() ?? "")
+                        .ToArray();
+                    return new UtteranceNode(id, m["text"]?.ToString() ?? "", charId, (bool)m["deleted"], tags);
+                })
+                .ToArray();
+
+            var rels = record["rels"]
+                .As<List<object>>()
+                .Select(o =>
+                {
+                    var m = (IDictionary<string, object>)o;
+                    Guid.TryParse(m["from"]?.ToString(), out var from);
+                    Guid.TryParse(m["to"]?.ToString(), out var to);
+                    double? weight = null;
+                    if (m.TryGetValue("weight", out var w) && w is not null)
+                    {
+                        if (double.TryParse(w.ToString(), out var dw))
+                            weight = dw;
+                    }
+                    return new RelationEdge(from, to, m["type"]?.ToString() ?? "", weight);
+                })
+                .ToArray();
+
+            return new GraphResponse(
+                Guid.Parse(record["cid"].As<string>()),
+                record["title"].As<string>(),
+                nodes,
+                rels
+            );
+        }
         private async Task<UtteranceResponse> RunCreateUtterance(string cypher, Guid conversationId, Guid id, string text, Guid? characterId)
         {
             await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
@@ -240,5 +335,6 @@ namespace Npc.Api.Services.Impl
                 tagsList
             );
         }
+
     }
 }

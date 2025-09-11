@@ -23,26 +23,26 @@ namespace Npc.Api.Controllers
 
 
         [HttpPost("utterances/{fromUtteranceId:guid}/next")]
-        public async Task<ActionResult<UtteranceResponse>> AddNext(Guid fromUtteranceId, UtteranceCreateRequest req, CancellationToken ct)
+        public async Task<ActionResult<UtteranceResponse>> AddNext([FromRoute] Guid fromUtteranceId, [FromBody] UtteranceCreateRequest req, CancellationToken ct)
             => Ok(await svc.AddNextUtterance(fromUtteranceId, req.Text, req.CharacterId, ct));
 
         [HttpPost("branch")]
-        public async Task<IActionResult> Branch(BranchCreateRequest req, CancellationToken ct)
+        public async Task<IActionResult> Branch([FromBody] BranchCreateRequest req, CancellationToken ct)
         {
             await svc.AddBranchAsync(req.FromUtteranceId, req.ToUtteranceId, ct);
             return NoContent();
         }
 
         [HttpGet("{conversationId:guid}/path")]
-        public async Task<ActionResult<PathResponse>> Path(Guid conversationId, CancellationToken ct)
+        public async Task<ActionResult<PathResponse>> Path([FromRoute] Guid conversationId, CancellationToken ct)
         {
             var result = await svc.GetLinearPathAsync(conversationId, ct);
             return result is null ? NotFound() : Ok(result);
         }
-        
-            
+
+
         [HttpGet("utterances/{utteranceId:guid}")]
-        public async Task<ActionResult<UtteranceDetail>> GetUtterance(Guid utteranceId, CancellationToken ct)
+        public async Task<ActionResult<UtteranceDetail>> GetUtterance([FromRoute] Guid utteranceId, CancellationToken ct)
         {
             var u = await svc.GetUtteranceAsync(utteranceId, ct);
             return u is null ? NotFound() : Ok(u);
@@ -50,8 +50,8 @@ namespace Npc.Api.Controllers
 
         [HttpPatch("utterances/{utteranceId:guid}")]
         public async Task<ActionResult<UtteranceDetail>> UpdateUtterance(
-            Guid utteranceId,
-            UtteranceUpdateRequest req,
+            [FromRoute] Guid utteranceId,
+            [FromBody] UtteranceUpdateRequest req,
             CancellationToken ct)
         {
             var updated = await svc.UpdateUtteranceAsync(utteranceId, req.Text, req.Tags, req.Version, ct);
@@ -60,10 +60,20 @@ namespace Npc.Api.Controllers
         }
 
         [HttpDelete("utterances/{utteranceId:guid}")]
-        public async Task<IActionResult> SoftDelete(Guid utteranceId, CancellationToken ct)
+        public async Task<IActionResult> SoftDelete([FromRoute] Guid utteranceId, CancellationToken ct)
         {
             var ok = await svc.SoftDeleteUtteranceAsync(utteranceId, ct);
             return ok ? NoContent() : NotFound();
+        }
+        
+        [HttpGet("{conversationId:guid}/graph")]
+        public async Task<ActionResult<GraphResponse>> GetGraph(
+            [FromRoute] Guid conversationId,
+            [FromQuery] int depth = 10,
+            CancellationToken ct = default)
+        {
+            var graph = await svc.GetGraphAsync(conversationId, depth, ct);
+            return graph is null ? NotFound() : Ok(graph);
         }
     }
 }

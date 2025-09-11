@@ -12,5 +12,6 @@ namespace Npc.Api.Services
         Task<UtteranceDetail?> GetUtteranceAsync(Guid utteranceId, CancellationToken ct);
         Task<UtteranceDetail?> UpdateUtteranceAsync(Guid utteranceId, string text, string[]? tags, int expectedVersion, CancellationToken ct);
         Task<bool> SoftDeleteUtteranceAsync(Guid utteranceId, CancellationToken ct);
+        Task<GraphResponse?> GetGraphAsync(Guid conversationId, int depth, CancellationToken ct);
     }
 }
