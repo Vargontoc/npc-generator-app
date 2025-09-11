@@ -1,1 +1,7 @@
 .env
+.env.*
+*.sln
+!.env.example
+
+backend/Npc.Api/bin/**
+backend/Npc.Api/obj/**
