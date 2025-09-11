@@ -86,12 +86,31 @@ namespace Npc.Api.Controllers
             var path = await svc.GetRandomPathAsync(conversationId, maxDepth, ct);
             return path is null ? NotFound() : Ok(path);
         }
-        
+
         [HttpPost("branch/weight")]
         public async Task<IActionResult> SetBranchWeight([FromQuery] Guid fromId, [FromQuery] Guid toId, [FromQuery] double weight, CancellationToken ct = default)
         {
             await svc.SetBranchWeightAsync(fromId, toId, weight, ct);
             return NoContent();
+        }
+        
+        [HttpPost("import")]
+        public async Task<ActionResult<ConversationResponse>> Import(
+            [FromBody] ConversationImportRequest req,
+            CancellationToken ct)
+        {
+            var res = await svc.ImportConversationAsync(req, ct);
+            return Ok(res);
+        }
+
+        [HttpPost("{conversationId:guid}/auto-expand")]
+        public async Task<ActionResult<object>> AutoExpand(
+            [FromRoute] Guid conversationId,
+            [FromBody] AutoExpandedRequest req,
+            CancellationToken ct)
+        {
+            var list = await svc.AutoExpandedAsync(conversationId, req, ct);
+            return Ok(new { generated = list.Length, items = list });
         }
     }
 }

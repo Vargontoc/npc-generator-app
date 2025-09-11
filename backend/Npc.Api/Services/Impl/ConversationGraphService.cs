@@ -1,9 +1,10 @@
+using System.Text;
 using Neo4j.Driver;
 using Npc.Api.Dtos;
 
 namespace Npc.Api.Services.Impl
 {
-    public class ConversationGraphService(IDriver driver) : IConversationGraphService
+    public class ConversationGraphService(IDriver driver, IAgentConversationService agent) : IConversationGraphService
     {
         public async Task AddBranchAsync(Guid fromUtteranceId, Guid toUtteranceId, CancellationToken ct)
         {
@@ -441,6 +442,172 @@ namespace Npc.Api.Services.Impl
             });
             return new UtteranceResponse(Guid.Parse(rec["id"].As<string>()), rec["text"].As<string>(), ParseGuid(rec["characterId"]?.As<string>()));
         }
+
+        public async Task<ConversationResponse> ImportConversationAsync(ConversationImportRequest req, CancellationToken ct)
+        {
+                   var convId = req.ConversationId ?? Guid.NewGuid();
+            var title = req.Title ?? $"Conversation {convId}";
+            var utters = req.Utterances ?? Array.Empty<ImportedUtterance>();
+            var rels = req.Relations ?? Array.Empty<ImportedRelation>();
+
+            // Validate relation types
+            if (rels.Any(r => r.Type is not ("NEXT" or "BRANCH_TO" or "ROOT")))
+                throw new ArgumentException("Invalid relation type detected.");
+
+            // Build Cypher
+            var sb = new StringBuilder();
+            sb.AppendLine("MERGE (c:Conversation {id:$cid})");
+            sb.AppendLine("SET c.title = $title, c.importedAt = datetime()");
+            sb.AppendLine("WITH c");
+            sb.AppendLine("CALL {");
+
+            // Create utterances
+            int idx = 0;
+            foreach (var u in utters)
+            {
+                var nodeVar = $"u{idx}";
+                var nodeId = u.Id is not null && req.PreserveIds ? u.Id.Value : Guid.NewGuid();
+                sb.AppendLine($"""
+                    MERGE ({nodeVar}:Utterance id:'{nodeId}')
+                    SET {nodeVar}.text = $p{idx}_text,
+                        {nodeVar}.characterId = $p{idx}_char,
+                        {nodeVar}.deleted = coalesce($p{idx}_del,false),
+                        {nodeVar}.version = coalesce($p{idx}_ver,1),
+                        {nodeVar}.tags = coalesce($p{idx}_tags,[]),
+                        {nodeVar}.updatedAt = datetime(),
+                        {nodeVar}.createdAt = coalesce({nodeVar}.createdAt, datetime())
+                    """);
+                idx++;
+            }
+
+            sb.AppendLine("RETURN 1 AS done }");
+            sb.AppendLine("WITH c");
+            sb.AppendLine("CALL {");
+
+            // Relations
+            for (int i = 0; i < rels.Length; i++)
+            {
+                var r = rels[i];
+                if (r.Type == "ROOT")
+                {
+                    sb.AppendLine($"""
+                        MATCH (c:Conversation id:$cid),(ru:Utterance id:'{r.To}')
+                        MERGE (c)-[:ROOT]->(ru)
+                        """);
+                }
+                else
+                {
+                    sb.AppendLine($"""
+                        MATCH (fa:Utterance id:'{r.From}'),(ta:Utterance d:'{r.To}')
+                        MERGE (fa)-[rel:{r.Type}]->(ta)
+                        """);
+                    if (r.Type == "BRANCH_TO")
+                    {
+                        var w = r.Weight is null or <= 0 ? 1.0 : r.Weight.Value;
+                        sb.AppendLine($"SET rel.weight = {w}");
+                    }
+                }
+            }
+
+            sb.AppendLine("RETURN 1 AS done }");
+            sb.AppendLine("RETURN c.id AS id, c.title AS title");
+
+            // Parameters
+            var parameters = new Dictionary<string, object?>
+            {
+                ["cid"] = convId.ToString(),
+                ["title"] = title
+            };
+
+            // Param values for utterances
+            for (int i = 0; i < utters.Length; i++)
+            {
+                var u = utters[i];
+                parameters[$"p{i}_text"] = u.Text;
+                parameters[$"p{i}_char"] = u.CharacterId?.ToString();
+                parameters[$"p{i}_del"] = u.Deleted ?? false;
+                parameters[$"p{i}_ver"] = u.Version ?? 1;
+                parameters[$"p{i}_tags"] = u.Tags ?? Array.Empty<string>();
+            }
+
+            await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+            var rec = await session.ExecuteWriteAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(sb.ToString(), parameters);
+                return await cursor.SingleAsync();
+            });
+
+            return new ConversationResponse(Guid.Parse(rec["id"].As<string>()), rec["title"].As<string>());
+        }
+
+        public async Task<GeneratedUtterance[]> AutoExpandedAsync(Guid conversationId, AutoExpandedRequest req, CancellationToken ct)
+        {
+            if (agent is null) return [];
+
+            var generated = await agent.GenerateAsync(conversationId, req, ct);
+            if (generated.Length == 0) return generated;
+
+            // Attach to specified node or root
+            var fromId = req.FromUtteranceId;
+
+            // If no fromId: find root
+            if (fromId is null)
+            {
+                const string findRoot = """
+                    MATCH (c:Conversation {id:$cid})-[:ROOT]->(u:Utterance)
+                    RETURN u.id AS id
+                    """;
+                await using var sessionRoot = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read));
+                var rootRec = await sessionRoot.ExecuteReadAsync(async tx =>
+                {
+                    var cursor = await tx.RunAsync(findRoot, new { cid = conversationId.ToString() });
+                    return await cursor.SingleAsync();
+                });
+                if (rootRec is null) return generated; // no root yet
+                fromId = Guid.Parse(rootRec["id"].As<string>());
+            }
+
+            // Insert each as NEXT chain
+            Guid current = fromId!.Value;
+            foreach (var gen in generated)
+            {
+                var newId = Guid.NewGuid();
+                const string cypher = """
+                    MATCH (u:Utterance {id:$fromId})
+                    CREATE (n:Utterance {
+                        id:$id,
+                        text:$text,
+                        characterId:$charId,
+                        createdAt:datetime(),
+                        updatedAt:datetime(),
+                        deleted:false,
+                        version:1,
+                        tags:coalesce($tags,[])
+                    })
+                    CREATE (u)-[:NEXT]->(n)
+                    RETURN n.id AS id
+                    """;
+                await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                var _ = await session.ExecuteWriteAsync(async tx =>
+                {
+                    var cursor = await tx.RunAsync(cypher, new
+                    {
+                        fromId = current.ToString(),
+                        id = newId.ToString(),
+                        text = gen.Text,
+                        charId = gen.CharacterId?.ToString(),
+                        tags = gen.Tags ?? Array.Empty<string>()
+                    });
+                    return await cursor.SingleAsync();
+                });
+                current = newId;
+            }
+
+            return generated;
+        }
+        
+
+
         private async Task<UtteranceResponse> RunUtteranceByFrom(string cypher, Guid fromUtteranceId, Guid id, string text, Guid? characterId)
         {
 
