@@ -3,12 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Npc.Api.Data;
 using Npc.Api.Dtos;
 using Npc.Api.Entities;
+using Npc.Api.Services;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("characters")]
-    public class CharacterController(CharacterDbContext ctx) : ControllerBase
+    public class CharacterController(CharacterDbContext ctx, IModerationService mod) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Character>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
@@ -29,6 +30,10 @@ namespace Npc.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<Character>> CreateCharacter([FromBody] CharacterCreateRequest req, CancellationToken ct = default)
         {
+            var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
+            if (advisory.HasAdvisory)
+                Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
+
             var entity = new Character
             {
                 Name = req.Name,
@@ -46,6 +51,10 @@ namespace Npc.Api.Controllers
         [HttpPut("{id:guid}")]
         public async Task<ActionResult<Character>> UpdateCharacter([FromRoute] Guid id, [FromBody] CharacterUpdateRequest req, CancellationToken ct = default)
         {
+            var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
+            if (advisory.HasAdvisory)
+                Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
+
             var entity = await ctx.Set<Character>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
 
             if (entity is null) return NotFound();
