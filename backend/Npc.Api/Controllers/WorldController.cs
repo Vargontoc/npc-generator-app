@@ -21,7 +21,7 @@ namespace Npc.Api.Controllers
             .AsNoTracking()
             .OrderByDescending(c => c.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(w => new WorldResponse(w.Id, w.Name, w.Description, w.CreatedAt, w.UpdateAt)).ToListAsync(ct);
+            .Select(w => new WorldResponse(w.Id, w.Name, w.Description, w.CreatedAt, w.UpdatedAt)).ToListAsync(ct);
 
             return Ok(list);
         }
@@ -31,7 +31,7 @@ namespace Npc.Api.Controllers
         {
             var entity = await ctx.Set<World>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (entity is null) return NotFound();
-            return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdateAt));
+            return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
         }
 
         [HttpPost]
@@ -42,7 +42,7 @@ namespace Npc.Api.Controllers
 
             await ctx.SaveChangesAsync(ct);
             return CreatedAtAction(nameof(GetWorld), new { id = entity.Id },
-             new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdateAt));
+             new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
         }
 
         [HttpPut("{id:guid}")]
@@ -54,7 +54,7 @@ namespace Npc.Api.Controllers
             entity.Description = request.Description;
 
             await ctx.SaveChangesAsync(ct);
-            return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdateAt));
+            return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
         }
         
         [HttpDelete("{id:guid}")]

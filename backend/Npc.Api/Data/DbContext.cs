@@ -22,7 +22,7 @@ public class CharacterDbContext : DbContext
         character.Property(c => c.Description).HasMaxLength(2000);
         character.Property(c => c.AvatarUrl);
         character.Property(c => c.CreatedAt).IsRequired();
-        character.Property(c => c.UpdateAt).IsRequired();
+        character.Property(c => c.UpdatedAt).IsRequired();
         character.HasIndex(c => c.Name);
 
         // World
@@ -32,7 +32,7 @@ public class CharacterDbContext : DbContext
         world.Property(w => w.Name).IsRequired().HasMaxLength(120);
         world.Property(w => w.Description).HasMaxLength(4000);
         world.Property(w => w.CreatedAt).IsRequired();
-        world.Property(w => w.UpdateAt).IsRequired();
+        world.Property(w => w.UpdatedAt).IsRequired();
 
         // Lore
         var lore = modelBuilder.Entity<Lore>();
@@ -41,7 +41,7 @@ public class CharacterDbContext : DbContext
         lore.Property(l => l.Title).IsRequired().HasMaxLength(200);
         lore.Property(l => l.Text);
         lore.Property(l => l.CreatedAt).IsRequired();
-        lore.Property(l => l.UpdateAt).IsRequired();
+        lore.Property(l => l.UpdatedAt).IsRequired();
         lore.HasOne(l => l.World).WithMany(w => w.LoreEntries).HasForeignKey(l => l.WorldId).OnDelete(DeleteBehavior.SetNull);
     }
     
@@ -55,7 +55,7 @@ public class CharacterDbContext : DbContext
             {
                 if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
                 {
-                    entry.CurrentValues["UpdateAt"] = now;
+                    entry.CurrentValues["UpdatedAt"] = now;
                     if (entry.State == EntityState.Added)
                     {
                         entry.CurrentValues["CreatedAt"] = now;
