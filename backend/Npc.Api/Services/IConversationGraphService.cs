@@ -16,6 +16,7 @@ namespace Npc.Api.Services
         Task<PathResponse?> GetRandomPathAsync(Guid conversationId, int maxDepth, CancellationToken ct);
         Task SetBranchWeightAsync(Guid fromUtteranceId, Guid toUtteranceId, double? weight, CancellationToken ct);
         Task<ConversationResponse> ImportConversationAsync(ConversationImportRequest req, CancellationToken ct);
+    Task<ConversationExportResponse?> ExportConversationAsync(Guid conversationId, int depth, CancellationToken ct);
         Task<GeneratedUtterance[]> AutoExpandedAsync(Guid conversationId, AutoExpandedRequest req, CancellationToken ct);
     }
 }

@@ -540,6 +540,95 @@ namespace Npc.Api.Services.Impl
             return new ConversationResponse(Guid.Parse(rec["id"].As<string>()), rec["title"].As<string>());
         }
 
+        public async Task<ConversationExportResponse?> ExportConversationAsync(Guid conversationId, int depth, CancellationToken ct)
+        {
+             if (depth is < 1 or > 50) depth = 25;
+            var cypher = """
+                MATCH (c:Conversation {id:$cid})
+                OPTIONAL MATCH (c)-[:ROOT]->(root:Utterance)
+                WITH c, root
+                CALL {
+                WITH root
+                OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..
+                """ + depth
+                +
+
+                """
+                ]->(u:Utterance)
+                WITH collect(DISTINCT u) + root AS rawNodes
+                WITH [n IN rawNodes WHERE n IS NOT NULL] AS nodes, root
+                RETURN nodes, root
+                }
+                WITH c, root, nodes
+                UNWIND nodes AS n
+                WITH c, root, collect(DISTINCT 
+                    id:n.id,
+                    text:n.text,
+                    characterId:n.characterId,
+                    deleted:coalesce(n.deleted,false),
+                    tags:coalesce(n.tags,[]),
+                    version:coalesce(n.version,1)
+                ) AS utters, nodes
+                CALL {
+                WITH nodes
+                UNWIND nodes AS a
+                MATCH (a)-[r:NEXT|BRANCH_TO]->(b)
+                WHERE b IN nodes
+                RETURN collect(DISTINCT  from:a.id, to:b.id, type:type(r), weight:r.weight ) AS rels
+                }
+                RETURN c.id AS cid,
+                    c.title AS title,
+                    root.id AS rootId,
+                    utters,
+                    rels
+                """;
+            await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read));
+            var rec = await session.ExecuteReadAsync(async tx =>
+            {
+                var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString() });
+                return await cursor.SingleAsync();
+            });
+            if (rec is null) return null;
+
+            var utters = rec["utters"].As<List<object>>().Select(o =>
+            {
+                var m = (IDictionary<string, object>)o;
+                Guid.TryParse(m["id"]?.ToString(), out var id);
+                Guid? charId = ParseGuid(m["characterId"]?.ToString());
+                var tags = (m["tags"] as IEnumerable<object> ?? Array.Empty<object>()).Select(t => t?.ToString() ?? "").ToArray();
+                var deleted = m["deleted"] is bool b && b;
+                var ver = Convert.ToInt32(m["version"]);
+                return new ImportedUtterance(id, m["text"]?.ToString() ?? "", charId, deleted, tags, ver);
+            }).ToArray();
+
+            var rels = new List<ImportedRelation>();
+            // ROOT relation
+            Guid? rootId = ParseGuid(rec["rootId"]?.As<string>());
+            if (rootId != null)
+                rels.Add(new ImportedRelation(conversationId, rootId.Value, "ROOT", null));
+
+            // Other relations
+            foreach (var o in rec["rels"].As<List<object>>())
+            {
+                var m = (IDictionary<string, object>)o;
+                Guid.TryParse(m["from"]?.ToString(), out var from);
+                Guid.TryParse(m["to"]?.ToString(), out var to);
+                var type = m["type"]?.ToString() ?? "";
+                double? weight = null;
+                if (type == "BRANCH_TO" && m.TryGetValue("weight", out var w) && w is not null && double.TryParse(w.ToString(), out var dw))
+                    weight = dw;
+                rels.Add(new ImportedRelation(from, to, type, weight));
+            }
+
+            return new ConversationExportResponse(
+                conversationId,
+                rec["title"].As<string>(),
+                rootId,
+                utters,
+                rels.ToArray()
+            );
+        }
+
         public async Task<GeneratedUtterance[]> AutoExpandedAsync(Guid conversationId, AutoExpandedRequest req, CancellationToken ct)
         {
             if (agent is null) return [];
@@ -646,6 +735,6 @@ namespace Npc.Api.Services.Impl
             );
         }
 
-
+ 
     }
 }
