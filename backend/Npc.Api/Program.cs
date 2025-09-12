@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Writers;
 using Neo4j.Driver;
 using Npc.Api.Data;
 using Npc.Api.Infrastructure.Http;
+using Npc.Api.Infrastructure.Metrics;
 using Npc.Api.Services;
 using Npc.Api.Services.Impl;
 
@@ -29,6 +30,7 @@ builder.Services.AddDbContext<CharacterDbContext>(options =>
 
 builder.Services.AddScoped<IModerationAgent, ModerationAgentService>();
 builder.Services.AddScoped<IModerationService, ModerationService>();
+builder.Services.AddSingleton<AgentMetrics>();
 builder.Services.AddSingleton<IDriver>(_ => GraphDatabase.Driver(neoUri, AuthTokens.Basic(neoUser, neoPwd)));
 builder.Services.AddScoped<IConversationGraphService, ConversationGraphService>();
 
