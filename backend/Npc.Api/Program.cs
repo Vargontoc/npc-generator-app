@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using FluentValidation.AspNetCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Writers;
 using Neo4j.Driver;
 using Npc.Api.Data;
 using Npc.Api.Services;
@@ -12,7 +14,7 @@ var neo4jConf = builder.Configuration.GetSection("Neo4j");
 var neoUri = neo4jConf.GetValue<string>("Uri");
 var neoUser = neo4jConf.GetValue<string>("User");
 var neoPwd = neo4jConf.GetValue<string>("Password");
-
+builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -28,6 +30,15 @@ builder.Services.AddScoped<IModerationAgent, ModerationAgentService>();
 builder.Services.AddScoped<IModerationService, ModerationService>();
 builder.Services.AddSingleton<IDriver>(_ => GraphDatabase.Driver(neoUri, AuthTokens.Basic(neoUser, neoPwd)));
 builder.Services.AddScoped<IConversationGraphService, ConversationGraphService>();
+
+builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
+{
+    var opt = sp.GetRequiredService<IOptions<AgentOptions>>();
+    http.BaseAddress = new Uri(opt.Value.BaseUrl.TrimEnd('/') + "/");
+    http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
+});
+
+builder.Services.AddScoped<IAgentConversationService, AgentConversationService>();
 
 var app = builder.Build();
 using (var scope = app.Services.CreateAsyncScope())

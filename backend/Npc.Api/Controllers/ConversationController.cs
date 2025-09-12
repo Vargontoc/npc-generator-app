@@ -91,7 +91,7 @@ namespace Npc.Api.Controllers
             await svc.SetBranchWeightAsync(fromId, toId, weight, ct);
             return NoContent();
         }
-        
+
         [HttpPost("import")]
         public async Task<ActionResult<ConversationResponse>> Import(
             [FromBody] ConversationImportRequest req,
@@ -109,6 +109,16 @@ namespace Npc.Api.Controllers
         {
             var list = await svc.AutoExpandedAsync(conversationId, req, ct);
             return Ok(new { generated = list.Length, items = list });
+        }
+        
+        [HttpGet("{conversationId:guid}/export")]
+        public async Task<ActionResult<ConversationExportResponse>> Export(
+            Guid conversationId,
+            [FromQuery] int depth = 25,
+            CancellationToken ct = default)
+        {
+            var data = await svc.ExportConversationAsync(conversationId, depth, ct);
+            return data is null ? NotFound() : Ok(data);
         }
     }
 }

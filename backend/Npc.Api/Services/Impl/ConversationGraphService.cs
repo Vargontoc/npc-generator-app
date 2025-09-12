@@ -454,6 +454,56 @@ namespace Npc.Api.Services.Impl
             if (rels.Any(r => r.Type is not ("NEXT" or "BRANCH_TO" or "ROOT")))
                 throw new ArgumentException("Invalid relation type detected.");
 
+
+            var rootRels = rels.Where(r => r.Type == "ROOT").ToList();
+            if (rootRels.Count > 1)
+                throw new ArgumentException("Multiple ROOT relations supplied.");
+
+            // Prepare final utterance IDs
+            var finalUtters = utters
+                .Select(u => new
+                {
+                    Input = u,
+                    FinalId = (u.Id != null && req.PreserveIds) ? u.Id.Value : Guid.NewGuid()
+                })
+                .ToArray();
+
+
+            // Determine intended root (from relation or request field or first utterance)
+            Guid? intendedRoot = rootRels.Count == 1
+                ? rootRels[0].To
+                : req.RootUtteranceId;
+            
+
+            
+            if (intendedRoot is null && finalUtters.Length > 0)
+                intendedRoot = finalUtters[0].FinalId;
+
+            // Fetch existing root (if any)
+            Guid? existingRoot = null;
+            const string findRoot = """
+                MATCH (c:Conversation {id:$cid})-[:ROOT]->(u:Utterance)
+                RETURN u.id AS id
+                LIMIT 1
+                """;
+            await using (var sessionCheck = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read)))
+            {
+                var rootRec = await sessionCheck.ExecuteReadAsync(async tx =>
+                {
+                    var cursor = await tx.RunAsync(findRoot, new { cid = convId.ToString() });
+                    return await cursor.SingleAsync();
+                });
+                if (rootRec is not null)
+                    existingRoot = ParseGuid(rootRec["id"]?.As<string>());
+            }
+
+            // Conflict: existing root differs from intended
+            if (existingRoot != null && intendedRoot != null && existingRoot != intendedRoot)
+                throw new InvalidOperationException("Root already exists and differs from imported root.");
+
+            var needCreateRoot = existingRoot == null && intendedRoot != null && rootRels.Count == 0;
+
+
             // Build Cypher
             var sb = new StringBuilder();
             sb.AppendLine("MERGE (c:Conversation {id:$cid})");
@@ -511,6 +561,45 @@ namespace Npc.Api.Services.Impl
 
             sb.AppendLine("RETURN 1 AS done }");
             sb.AppendLine("RETURN c.id AS id, c.title AS title");
+                
+            // Relations provided
+            foreach (var r in rels)
+            {
+                if (r.Type == "ROOT")
+                {
+                    // Respect only if no existing root
+                    if (existingRoot == null)
+                    {
+                        sb.AppendLine($"""
+                            MATCH (c:Conversation id:$cid),(ru:Utterance id:'{r.To}')
+                            MERGE (c)-[:ROOT]->(ru)
+                            """);
+                    }
+                    continue;
+                }
+
+                sb.AppendLine($"""
+                    MATCH (fa:Utterance id:'{r.From}'),(ta:Utterance id:'{r.To}')
+                    MERGE (fa)-[rel:{r.Type}]->(ta)
+                    """);
+                if (r.Type == "BRANCH_TO")
+                {
+                    var w = r.Weight is null or <= 0 ? 1.0 : r.Weight.Value;
+                    sb.AppendLine($"SET rel.weight = {w}");
+                }
+            }
+
+            // Create root if needed
+            if (needCreateRoot && intendedRoot != null)
+            {
+                sb.AppendLine($"""
+                    MATCH (c:Conversation id:$cid),(ru:Utterance id:'{intendedRoot}')
+                    MERGE (c)-[:ROOT]->(ru)
+                    """);
+            }
+
+            sb.AppendLine("RETURN 1 AS done }");
+            sb.AppendLine("RETURN c.id AS id, c.title AS title");
 
             // Parameters
             var parameters = new Dictionary<string, object?>
@@ -518,16 +607,14 @@ namespace Npc.Api.Services.Impl
                 ["cid"] = convId.ToString(),
                 ["title"] = title
             };
-
-            // Param values for utterances
-            for (int i = 0; i < utters.Length; i++)
+            for (int i = 0; i < finalUtters.Length; i++)
             {
-                var u = utters[i];
-                parameters[$"p{i}_text"] = u.Text;
-                parameters[$"p{i}_char"] = u.CharacterId?.ToString();
-                parameters[$"p{i}_del"] = u.Deleted ?? false;
-                parameters[$"p{i}_ver"] = u.Version ?? 1;
-                parameters[$"p{i}_tags"] = u.Tags ?? Array.Empty<string>();
+                var fu = finalUtters[i];
+                parameters[$"p{i}_text"] = fu.Input.Text;
+                parameters[$"p{i}_char"] = fu.Input.CharacterId?.ToString();
+                parameters[$"p{i}_del"] = fu.Input.Deleted ?? false;
+                parameters[$"p{i}_ver"] = fu.Input.Version ?? 1;
+                parameters[$"p{i}_tags"] = fu.Input.Tags ?? Array.Empty<string>();
             }
 
             await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
