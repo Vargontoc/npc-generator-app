@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Npc.Api.Dtos;
 using Npc.Api.Services;
+using Npc.Api.Services.Impl;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("conversations")]
-    public class ConversationsController(IConversationGraphService svc) : ControllerBase
+    public class ConversationsController(IConversationGraphService svc, ITtsService tts) : ControllerBase
     {
         [HttpPost]
         public async Task<ActionResult<ConversationResponse>> CreateConversation(ConversationCreateRequest req, CancellationToken ct)
@@ -107,10 +108,17 @@ namespace Npc.Api.Controllers
             [FromBody] AutoExpandedRequest req,
             CancellationToken ct)
         {
+            var original = req.Count;
+            var clamped = original < 1 ? 1 : (original > 20 ? 20 : original);
+            if (clamped != original)
+                Response.Headers.TryAdd("X-Count-Adjusted", clamped.ToString());
+
+            req = req with { Count = clamped };
+
             var list = await svc.AutoExpandedAsync(conversationId, req, ct);
             return Ok(new { generated = list.Length, items = list });
         }
-        
+
         [HttpGet("{conversationId:guid}/export")]
         public async Task<ActionResult<ConversationExportResponse>> Export(
             Guid conversationId,
@@ -119,6 +127,37 @@ namespace Npc.Api.Controllers
         {
             var data = await svc.ExportConversationAsync(conversationId, depth, ct);
             return data is null ? NotFound() : Ok(data);
+        }
+        
+        [HttpGet("voices")]
+        public async Task<IActionResult> Voices(CancellationToken ct)
+        {
+            try
+            {
+                var json = await tts.GetVoices(ct);
+                return Content(json, "application/json");
+            }
+            catch (TtsException ex)
+            {
+                return StatusCode(ex.StatusCode, new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("synthesize")]
+        public async Task<IActionResult> Synthesize([FromBody] TtsSynthesizeRequest req, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(req.Text) || string.IsNullOrWhiteSpace(req.Voice))
+                return BadRequest(new { error = "Text and Voice are required." });
+
+            try
+            {
+                var (stream, contentType, fileName) = await tts.GenerateVoice(req, ct);
+                return File(stream, contentType, fileName ?? $"{req.Voice}.{req.Format}");
+            }
+            catch (TtsException ex)
+            {
+                return StatusCode(ex.StatusCode, new { error = ex.Message });
+            }
         }
     }
 }

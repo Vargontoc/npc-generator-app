@@ -17,7 +17,7 @@ var neoUri = neo4jConf.GetValue<string>("Uri");
 var neoUser = neo4jConf.GetValue<string>("User");
 var neoPwd = neo4jConf.GetValue<string>("Password");
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
-
+builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Tts"));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
@@ -31,6 +31,7 @@ builder.Services.AddDbContext<CharacterDbContext>(options =>
 builder.Services.AddScoped<IModerationAgent, ModerationAgentService>();
 builder.Services.AddScoped<IModerationService, ModerationService>();
 builder.Services.AddSingleton<AgentMetrics>();
+builder.Services.AddSingleton<TtsMetrics>();
 builder.Services.AddSingleton<IDriver>(_ => GraphDatabase.Driver(neoUri, AuthTokens.Basic(neoUser, neoPwd)));
 builder.Services.AddScoped<IConversationGraphService, ConversationGraphService>();
 
@@ -41,7 +42,18 @@ builder.Services.AddHttpClient<IAgentConversationService, AgentConversationServi
     http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
 }).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
 
+builder.Services.AddHttpClient<ITtsService, TtsService>((sp, http) =>
+{
+    var opt = sp.GetRequiredService<IOptions<TtsOptions>>();
+    http.BaseAddress = new Uri(opt.Value.BaseUrl.TrimEnd('/') + "/");
+    http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
+
+
+}).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
+
+
 builder.Services.AddScoped<IAgentConversationService, AgentConversationService>();
+builder.Services.AddScoped<ITtsService, TtsService>();
 
 var app = builder.Build();
 using (var scope = app.Services.CreateAsyncScope())
