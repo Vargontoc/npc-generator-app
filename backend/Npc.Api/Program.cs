@@ -1,13 +1,16 @@
 using System.IO.Compression;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Writers;
 using Neo4j.Driver;
 using Npc.Api.Data;
 using Npc.Api.Infrastructure.Http;
 using Npc.Api.Infrastructure.Metrics;
 using Npc.Api.Infrastructure.Observability;
+using Npc.Api.Middleware;
 using Npc.Api.Services;
 using Npc.Api.Services.Impl;
 using OpenTelemetry.Metrics;
@@ -21,6 +24,34 @@ var neo4jConf = builder.Configuration.GetSection("Neo4j");
 var neoUri = neo4jConf.GetValue<string>("Uri");
 var neoUser = neo4jConf.GetValue<string>("User");
 var neoPwd = neo4jConf.GetValue<string>("Password");
+
+// Cors Configuration
+builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
+var securitySection = builder.Configuration.GetSection("Security");
+var origins = securitySection.GetSection("AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(o =>
+{
+    o.AddPolicy("Default", p =>
+    {
+        if (origins.Length > 0)
+            p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        else
+            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod(); // fallback
+    });
+});
+
+// Rate limit Configuration
+var rl = securitySection.GetSection("RateLimit").Get<RateLimitOptions>() ?? new RateLimitOptions();
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("global", lim =>
+    {
+        lim.PermitLimit = rl.PermitLimit;
+        lim.Window = TimeSpan.FromSeconds(rl.WindowSeconds);
+        lim.QueueLimit = 0;
+    });
+});
+
 
 // Log Configuration
 Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).Enrich.FromLogContext().WriteTo.Console(
@@ -49,6 +80,37 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "ready" });
 
+
+// Swagger Configuration
+builder.Services.AddSwaggerGen(c =>
+{
+    var xml = Path.Combine(AppContext.BaseDirectory, "Npc.Api.xml");
+    if (File.Exists(xml))
+        c.IncludeXmlComments(xml, includeControllerXmlComments: true);
+
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "NPC Generator API",
+        Version = "v1",
+        Description = "API para generación y gestión de NPCs, lore, conversaciones, TTS e imágenes."
+    });
+
+    var apiKeyScheme = new OpenApiSecurityScheme
+    {
+        Name = "X-API-Key",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "API Key requerida (X-API-Key)."
+    };
+    c.AddSecurityDefinition("ApiKey", apiKeyScheme);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            apiKeyScheme,
+            Array.Empty<string>()
+        }
+    });
+});
 
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Tts"));
@@ -114,6 +176,12 @@ builder.Services.AddScoped<ITtsService, TtsService>();
 builder.Services.AddScoped<IImageGenService, ImageGenService>();
 
 var app = builder.Build();
+
+app.UseCors("Default");
+app.UseRateLimiter();
+app.UseApiKeyAuth();
+app.MapControllers().RequireRateLimiting("global");
+
 using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CharacterDbContext>();
@@ -144,3 +212,5 @@ app.MapHealthChecks("/health/live", new() { Predicate = _ => true });
 app.MapControllers();
 
 app.Run();
+
+public partial class Program {}
