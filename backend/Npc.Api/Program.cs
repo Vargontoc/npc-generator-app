@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Writers;
 using Neo4j.Driver;
 using Npc.Api.Data;
+using Npc.Api.Infrastructure.Http;
 using Npc.Api.Services;
 using Npc.Api.Services.Impl;
 
@@ -36,7 +37,7 @@ builder.Services.AddHttpClient<IAgentConversationService, AgentConversationServi
     var opt = sp.GetRequiredService<IOptions<AgentOptions>>();
     http.BaseAddress = new Uri(opt.Value.BaseUrl.TrimEnd('/') + "/");
     http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
-});
+}).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
 
 builder.Services.AddScoped<IAgentConversationService, AgentConversationService>();
 
