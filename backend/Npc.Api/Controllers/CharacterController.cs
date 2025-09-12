@@ -43,6 +43,7 @@ namespace Npc.Api.Controllers
             };
 
             ctx.Add(entity);
+            Infrastructure.Observability.Telemetry.CharactersCreated.Add(1);
             await ctx.SaveChangesAsync(ct);
 
             return CreatedAtAction(nameof(GetCharacter), new { id = entity.Id }, entity);

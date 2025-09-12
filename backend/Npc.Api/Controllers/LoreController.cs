@@ -3,12 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Npc.Api.Data;
 using Npc.Api.Dtos;
 using Npc.Api.Entities;
+using Npc.Api.Services;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("lores")]
-    public class LoreController(CharacterDbContext ctx) : ControllerBase
+    public class LoreController(CharacterDbContext ctx, IAgentConversationService svc) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<LoreResponse>>> List([FromQuery] Guid? worldId, CancellationToken ct)
@@ -89,6 +90,44 @@ namespace Npc.Api.Controllers
             ctx.Remove(entity);
             await ctx.SaveChangesAsync(ct);
             return NoContent();
+        }
+
+        [HttpPost("suggest")]
+        public async Task<ActionResult<LoreSuggestResponse>> Suggest(
+            [FromBody] LoreSuggestRequest req,
+            CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(req.Prompt))
+                return BadRequest(new { error = "PromptRequired" });
+
+            var count = req.Count is < 1 or > 10 ? 1 : req.Count;
+            var adjusted = req with { Count = count };
+
+            var items = await svc.GenerateLoreAsync(adjusted, ct);
+            if (items.Length == 0)
+                return Ok(new LoreSuggestResponse(false, Array.Empty<LoreSuggestedItem>()));
+
+            if (req.DryRun) // no persist
+                return Ok(new LoreSuggestResponse(false, items));
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var it in items)
+            {
+                var entity = new Lore
+                {
+                    Title = it.Title,
+                    Text = it.Text,
+                    WorldId = req.WorldId,
+                    IsGenerated = true,
+                    GenerationSource = "agent",
+                    GenerationMeta = it.Model is null ? null : $"{{\"model\":\"{it.Model}\"}}",
+                    GeneratedAt = now
+                };
+                ctx.Add(entity);
+            }
+            await ctx.SaveChangesAsync(ct);
+
+            return Ok(new LoreSuggestResponse(true, items));
         }
     }
 }

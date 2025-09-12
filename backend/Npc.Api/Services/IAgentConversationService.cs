@@ -6,5 +6,6 @@ namespace Npc.Api.Services
     {
         Task<GeneratedUtterance[]> GenerateAsync(Guid conversationId, AutoExpandedRequest req, CancellationToken ct);
         
+        Task<LoreSuggestedItem[]> GenerateLoreAsync(LoreSuggestRequest req, CancellationToken ct);
     }
 }

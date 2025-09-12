@@ -7,7 +7,7 @@ namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("conversations")]
-    public class ConversationsController(IConversationGraphService svc, ITtsService tts) : ControllerBase
+    public class ConversationsController(IConversationGraphService svc, IAgentConversationService agent, ITtsService tts) : ControllerBase
     {
         [HttpPost]
         public async Task<ActionResult<ConversationResponse>> CreateConversation(ConversationCreateRequest req, CancellationToken ct)
@@ -141,6 +141,24 @@ namespace Npc.Api.Controllers
             {
                 return StatusCode(ex.StatusCode, new { error = ex.Message });
             }
+        }
+
+        [HttpPost("{conversationId:guid}/suggest")]
+        public async Task<IActionResult> SuggestBranch(
+            Guid conversationId,
+            [FromBody] AutoExpandedRequest req,
+            CancellationToken ct)
+        {
+            var safeCount = req.Count is < 1 or > 10 ? 3 : req.Count;
+            var adjusted = new AutoExpandedRequest(conversationId, safeCount, req.Context, req.FromUtteranceId);
+
+            var items = await agent.GenerateAsync(conversationId, adjusted, ct);
+            return Ok(new
+            {
+                conversationId,
+                count = items.Length,
+                items
+            });
         }
 
         [HttpPost("synthesize")]

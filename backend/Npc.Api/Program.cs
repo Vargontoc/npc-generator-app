@@ -7,8 +7,13 @@ using Neo4j.Driver;
 using Npc.Api.Data;
 using Npc.Api.Infrastructure.Http;
 using Npc.Api.Infrastructure.Metrics;
+using Npc.Api.Infrastructure.Observability;
 using Npc.Api.Services;
 using Npc.Api.Services.Impl;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +21,34 @@ var neo4jConf = builder.Configuration.GetSection("Neo4j");
 var neoUri = neo4jConf.GetValue<string>("Uri");
 var neoUser = neo4jConf.GetValue<string>("User");
 var neoPwd = neo4jConf.GetValue<string>("Password");
+
+// Log Configuration
+Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).Enrich.FromLogContext().WriteTo.Console(
+    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj} {Properties:j}{NewLine}{Exception}").CreateLogger();
+
+builder.Host.UseSerilog();
+
+// Telemetry Configuration
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("Npc.Api"))
+    .WithMetrics(m =>
+    {
+    
+        m.AddAspNetCoreInstrumentation()
+         .AddHttpClientInstrumentation()
+         .AddMeter(Telemetry.MeterName)
+         .AddPrometheusExporter(); // /metrics
+    })
+    .WithTracing(t =>
+    {
+        t.AddAspNetCoreInstrumentation()
+         .AddHttpClientInstrumentation();
+    });
+
+// Health Check Configuration
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "ready" });
+
 
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Tts"));
@@ -101,7 +134,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+// Endpoints
+app.MapPrometheusScrapingEndpoint("/metrics");
+
+app.MapHealthChecks("/health/ready", new() { Predicate = r => r.Tags.Contains("ready") });
+app.MapHealthChecks("/health/live", new() { Predicate = _ => true });
+
 app.MapControllers();
 
 app.Run();
