@@ -149,6 +149,20 @@ builder.Services.AddScoped<Repositories.IWorldRepository, Repositories.WorldRepo
 builder.Services.AddScoped<Repositories.ILoreRepository, Repositories.LoreRepository>();
 builder.Services.AddScoped<Repositories.IConversationRepository, Repositories.ConversationRepository>();
 
+// CQRS Pattern
+builder.Services.AddScoped<Application.Mediator.IMediator, Application.Mediator.SimpleMediator>();
+
+// Command Handlers
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateCharacterCommand, Entities.Character>, Application.Commands.CreateCharacterCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteCharacterCommand>, Application.Commands.DeleteCharacterCommandHandler>();
+
+// Query Handlers
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.GetCharacterByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.GetCharactersPagedQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersByAgeRangeQuery, IEnumerable<Entities.Character>>, Application.Queries.GetCharactersByAgeRangeQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchCharactersByNameQuery, IEnumerable<Entities.Character>>, Application.Queries.SearchCharactersByNameQueryHandler>();
+
 builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
 {
     var opt = sp.GetRequiredService<IOptions<AgentOptions>>();

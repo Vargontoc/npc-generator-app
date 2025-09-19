@@ -6,17 +6,21 @@ using Npc.Api.Entities;
 using Npc.Api.Services;
 using Npc.Api.Infrastructure.Audit;
 using Npc.Api.Repositories;
+using Npc.Api.Application.Mediator;
+using Npc.Api.Application.Commands;
+using Npc.Api.Application.Queries;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("characters")]
-    public class CharacterController(ICharacterRepository repository, IModerationService mod, IAuditService audit) : ControllerBase
+    public class CharacterController(IMediator mediator) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Character>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
         {
-            var (items, totalCount) = await repository.GetPagedAsync(page, pageSize, ct);
+            var query = new GetCharactersPagedQuery(page, pageSize);
+            var (items, totalCount) = await mediator.SendAsync(query, ct);
             Response.Headers.Append("X-Total-Count", totalCount.ToString());
             return Ok(items);
         }
@@ -24,30 +28,16 @@ namespace Npc.Api.Controllers
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<Character>> GetCharacter([FromRoute] Guid id, CancellationToken ct = default)
         {
-            var entity = await repository.GetByIdAsync(id, ct);
+            var query = new GetCharacterByIdQuery(id);
+            var entity = await mediator.SendAsync(query, ct);
             return entity is null ? NotFound() : Ok(entity);
         }
 
         [HttpPost]
         public async Task<ActionResult<Character>> CreateCharacter([FromBody] CharacterRequest req, CancellationToken ct = default)
         {
-            var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
-            if (advisory.HasAdvisory)
-                Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
-
-            var entity = new Character
-            {
-                Name = req.Name,
-                Age = req.Age,
-                Description = req.Description,
-                AvatarUrl = req.AvatarUrl
-            };
-
-            var createdEntity = await repository.AddAsync(entity, ct);
-            Infrastructure.Observability.Telemetry.CharactersCreated.Add(1);
-
-            // Audit trail
-            await audit.LogCharacterChangeAsync("CREATE", createdEntity.Id, null, createdEntity, "api-user", ct);
+            var command = new CreateCharacterCommand(req.Name, req.Age, req.Description, req.AvatarUrl);
+            var createdEntity = await mediator.SendAsync(command, ct);
 
             return CreatedAtAction(nameof(GetCharacter), new { id = createdEntity.Id }, createdEntity);
         }
@@ -55,45 +45,32 @@ namespace Npc.Api.Controllers
         [HttpPut("{id:guid}")]
         public async Task<ActionResult<Character>> UpdateCharacter([FromRoute] Guid id, [FromBody] CharacterRequest req, CancellationToken ct = default)
         {
-            var advisory = await mod.AnalyzeAsync(req.Age, req.Description, ct);
-            if (advisory.HasAdvisory)
-                Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
-
-            var entity = await repository.GetByIdAsync(id, ct);
-            if (entity is null) return NotFound();
-
-            // Capture old values for audit
-            var oldEntity = new { entity.Name, entity.Age, entity.Description, entity.AvatarUrl };
-
-            entity.Name = req.Name;
-            entity.Age = req.Age;
-            entity.Description = req.Description;
-            entity.AvatarUrl = req.AvatarUrl;
-
-            var updatedEntity = await repository.UpdateAsync(entity, ct);
-
-            // Audit trail
-            await audit.LogCharacterChangeAsync("UPDATE", updatedEntity.Id, oldEntity, updatedEntity, "api-user", ct);
-
-            return Ok(updatedEntity);
+            try
+            {
+                var command = new UpdateCharacterCommand(id, req.Name, req.Age, req.Description, req.AvatarUrl);
+                var updatedEntity = await mediator.SendAsync(command, ct);
+                return Ok(updatedEntity);
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound();
+            }
         }
 
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteCharacter([FromRoute] Guid id, CancellationToken ct = default)
         {
-            var entity = await repository.GetByIdAsync(id, ct);
-            if (entity is null) return NotFound();
-
-            // Capture entity for audit before deletion
-            var deletedEntity = new { entity.Id, entity.Name, entity.Age, entity.Description, entity.AvatarUrl };
-
-            await repository.DeleteAsync(id, ct);
-
-            // Audit trail
-            await audit.LogCharacterChangeAsync("DELETE", id, deletedEntity, null, "api-user", ct);
-
-            return NoContent();
+            try
+            {
+                var command = new DeleteCharacterCommand(id);
+                await mediator.SendAsync(command, ct);
+                return NoContent();
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound();
+            }
         }
 
     }
