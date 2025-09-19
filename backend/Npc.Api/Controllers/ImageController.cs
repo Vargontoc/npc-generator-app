@@ -66,7 +66,7 @@ namespace Npc.Api.Controllers
             if (string.IsNullOrWhiteSpace(req.JobId))
                 return BadRequest(new { error = "JobId required" });
 
-            var character = await ctx.Set<Character>().AsNoTracking().FirstOrDefaultAsync(c => c.Id == characterId, ct);
+            var character = await ctx.Set<Character>().FirstOrDefaultAsync(c => c.Id == characterId, ct);
             if (character is null) return NotFound(new { error = "CharacterNotFound" });
 
             try
