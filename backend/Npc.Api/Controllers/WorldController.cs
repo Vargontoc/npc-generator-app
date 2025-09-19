@@ -58,7 +58,7 @@ namespace Npc.Api.Controllers
         }
         
         [HttpDelete("{id:guid}")]
-        public async Task<IActionResult> DeleteCharacter([FromRoute] Guid id, CancellationToken ct = default)
+        public async Task<IActionResult> DeleteWorld([FromRoute] Guid id, CancellationToken ct = default)
         {
             var entity = await ctx.Set<World>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
 
