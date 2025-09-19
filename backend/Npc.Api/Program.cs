@@ -113,8 +113,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
-builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Tts"));
-builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("ImageGenerator"));
+builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection("Tts"));
+builder.Services.Configure<ImageGenOptions>(builder.Configuration.GetSection("ImageGenerator"));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
