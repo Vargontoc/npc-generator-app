@@ -5,26 +5,26 @@ using Npc.Api.Dtos;
 using Npc.Api.Entities;
 using Npc.Api.Services;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Repositories;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("characters")]
-    public class CharacterController(CharacterDbContext ctx, IModerationService mod, IAuditService audit) : ControllerBase
+    public class CharacterController(ICharacterRepository repository, IModerationService mod, IAuditService audit) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Character>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
         {
-            page = page < 1 ? 1 : page;
-            pageSize = pageSize is < 1 or > 100 ? 20 : pageSize;
-            var items = await ctx.Set<Character>().AsNoTracking().OrderByDescending(c => c.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+            var (items, totalCount) = await repository.GetPagedAsync(page, pageSize, ct);
+            Response.Headers.Append("X-Total-Count", totalCount.ToString());
             return Ok(items);
         }
 
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<Character>> GetCharacter([FromRoute] Guid id, CancellationToken ct = default)
         {
-            var entity = await ctx.Set<Character>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            var entity = await repository.GetByIdAsync(id, ct);
             return entity is null ? NotFound() : Ok(entity);
         }
 
@@ -43,14 +43,13 @@ namespace Npc.Api.Controllers
                 AvatarUrl = req.AvatarUrl
             };
 
-            ctx.Add(entity);
+            var createdEntity = await repository.AddAsync(entity, ct);
             Infrastructure.Observability.Telemetry.CharactersCreated.Add(1);
-            await ctx.SaveChangesAsync(ct);
 
             // Audit trail
-            await audit.LogCharacterChangeAsync("CREATE", entity.Id, null, entity, "api-user", ct);
+            await audit.LogCharacterChangeAsync("CREATE", createdEntity.Id, null, createdEntity, "api-user", ct);
 
-            return CreatedAtAction(nameof(GetCharacter), new { id = entity.Id }, entity);
+            return CreatedAtAction(nameof(GetCharacter), new { id = createdEntity.Id }, createdEntity);
         }
 
         [HttpPut("{id:guid}")]
@@ -60,8 +59,7 @@ namespace Npc.Api.Controllers
             if (advisory.HasAdvisory)
                 Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
 
-            var entity = await ctx.Set<Character>().FirstOrDefaultAsync(x => x.Id == id, ct);
-
+            var entity = await repository.GetByIdAsync(id, ct);
             if (entity is null) return NotFound();
 
             // Capture old values for audit
@@ -72,27 +70,25 @@ namespace Npc.Api.Controllers
             entity.Description = req.Description;
             entity.AvatarUrl = req.AvatarUrl;
 
-            await ctx.SaveChangesAsync(ct);
+            var updatedEntity = await repository.UpdateAsync(entity, ct);
 
             // Audit trail
-            await audit.LogCharacterChangeAsync("UPDATE", entity.Id, oldEntity, entity, "api-user", ct);
+            await audit.LogCharacterChangeAsync("UPDATE", updatedEntity.Id, oldEntity, updatedEntity, "api-user", ct);
 
-            return Ok(entity);
+            return Ok(updatedEntity);
         }
 
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteCharacter([FromRoute] Guid id, CancellationToken ct = default)
         {
-            var entity = await ctx.Set<Character>().FirstOrDefaultAsync(x => x.Id == id, ct);
-
+            var entity = await repository.GetByIdAsync(id, ct);
             if (entity is null) return NotFound();
 
             // Capture entity for audit before deletion
             var deletedEntity = new { entity.Id, entity.Name, entity.Age, entity.Description, entity.AvatarUrl };
 
-            ctx.Remove(entity);
-            await ctx.SaveChangesAsync(ct);
+            await repository.DeleteAsync(id, ct);
 
             // Audit trail
             await audit.LogCharacterChangeAsync("DELETE", id, deletedEntity, null, "api-user", ct);

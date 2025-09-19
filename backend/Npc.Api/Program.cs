@@ -143,6 +143,12 @@ builder.Services.AddSingleton<ImageGenMetrics>();
 builder.Services.AddSingleton<IDriver>(_ => GraphDatabase.Driver(neoUri, AuthTokens.Basic(neoUser, neoPwd)));
 builder.Services.AddScoped<IConversationGraphService, ConversationGraphService>();
 
+// Repository Pattern
+builder.Services.AddScoped<Repositories.ICharacterRepository, Repositories.CharacterRepository>();
+builder.Services.AddScoped<Repositories.IWorldRepository, Repositories.WorldRepository>();
+builder.Services.AddScoped<Repositories.ILoreRepository, Repositories.LoreRepository>();
+builder.Services.AddScoped<Repositories.IConversationRepository, Repositories.ConversationRepository>();
+
 builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
 {
     var opt = sp.GetRequiredService<IOptions<AgentOptions>>();
