@@ -119,6 +119,7 @@ builder.Services.Configure<ImageGenOptions>(builder.Configuration.GetSection("Im
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();
 
