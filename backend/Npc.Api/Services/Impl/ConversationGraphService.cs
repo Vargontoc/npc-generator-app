@@ -199,9 +199,7 @@ namespace Npc.Api.Services.Impl
             WITH c, root
             CALL {
             WITH root
-            OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..
-            """ + depth + """
-            ]->(u:Utterance)
+            OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..$depth]->(u:Utterance)
             WITH root, collect(DISTINCT u) AS collectedNodes
             WITH CASE 
                 WHEN root IS NOT NULL 
@@ -239,7 +237,7 @@ namespace Npc.Api.Services.Impl
             await using var session = driver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Read));
             var record = await session.ExecuteReadAsync(async tx =>
             {
-                var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString(), cdepth = depth });
+                var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString(), depth = depth });
                 return await cursor.SingleAsync();
             });
 
@@ -636,12 +634,7 @@ namespace Npc.Api.Services.Impl
                 WITH c, root
                 CALL {
                 WITH root
-                OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..
-                """ + depth
-                +
-
-                """
-                ]->(u:Utterance)
+                OPTIONAL MATCH p=(root)-[:NEXT|BRANCH_TO*0..$depth]->(u:Utterance)
                 WITH collect(DISTINCT u) + root AS rawNodes
                 WITH [n IN rawNodes WHERE n IS NOT NULL] AS nodes, root
                 RETURN nodes, root
