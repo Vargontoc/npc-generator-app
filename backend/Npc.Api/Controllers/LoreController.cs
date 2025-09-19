@@ -4,25 +4,23 @@ using Npc.Api.Data;
 using Npc.Api.Dtos;
 using Npc.Api.Entities;
 using Npc.Api.Services;
+using Npc.Api.Application.Mediator;
+using Npc.Api.Application.Commands;
+using Npc.Api.Application.Queries;
 
 namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("lores")]
-    public class LoreController(CharacterDbContext ctx, IAgentConversationService svc) : ControllerBase
+    public class LoreController(IMediator mediator) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<LoreResponse>>> List([FromQuery] Guid? worldId, CancellationToken ct)
         {
-            var query = ctx.Set<Lore>().AsNoTracking().AsQueryable();
-            if (worldId is not null)
-                query = query.Where(l => l.WorldId == worldId);
+            var query = new GetLoreByWorldIdQuery(worldId);
+            var lores = await mediator.SendAsync(query, ct);
 
-            var list = await query
-                .OrderByDescending(l => l.CreatedAt)
-                .Select(l => new LoreResponse(l.Id, l.Title, l.Text, l.WorldId, l.CreatedAt, l.UpdatedAt))
-                .ToListAsync(ct);
-
+            var list = lores.Select(l => new LoreResponse(l.Id, l.Title, l.Text, l.WorldId, l.CreatedAt, l.UpdatedAt));
             return Ok(list);
         }
 
@@ -30,7 +28,8 @@ namespace Npc.Api.Controllers
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<LoreResponse>> Get([FromRoute] Guid id, CancellationToken ct)
         {
-            var l = await ctx.Set<Lore>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            var query = new GetLoreByIdQuery(id);
+            var l = await mediator.SendAsync(query, ct);
             if (l is null) return NotFound();
             return Ok(new LoreResponse(l.Id, l.Title, l.Text, l.WorldId, l.CreatedAt, l.UpdatedAt));
         }
@@ -39,57 +38,53 @@ namespace Npc.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<LoreResponse>> Create([FromBody] LoreRequest req, CancellationToken ct)
         {
-            if (req.WorldId is not null)
+            try
             {
-                var exists = await ctx.Set<World>().AnyAsync(w => w.Id == req.WorldId, ct);
-                if (!exists) return BadRequest(new { error = "WorldNotFound" });
+                var command = new CreateLoreCommand(req.Title, req.Text, req.WorldId);
+                var entity = await mediator.SendAsync(command, ct);
+                return CreatedAtAction(nameof(Get), new { id = entity.Id },
+                    new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
             }
-
-            var entity = new Lore
+            catch (InvalidOperationException ex) when (ex.Message.Contains("World"))
             {
-                Title = req.Title,
-                Text = req.Text,
-                WorldId = req.WorldId
-            };
-
-            ctx.Add(entity);
-            await ctx.SaveChangesAsync(ct);
-
-            return CreatedAtAction(nameof(Get), new { id = entity.Id },
-                new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
+                return BadRequest(new { error = "WorldNotFound" });
+            }
         }
 
         // PUT /lore/{id}
         [HttpPut("{id:guid}")]
         public async Task<ActionResult<LoreResponse>> Update(Guid id, LoreRequest req, CancellationToken ct)
         {
-            var entity = await ctx.Set<Lore>().FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (entity is null) return NotFound();
-
-            if (req.WorldId is not null)
+            try
             {
-                var exists = await ctx.Set<World>().AnyAsync(w => w.Id == req.WorldId, ct);
-                if (!exists) return BadRequest(new { error = "WorldNotFound" });
+                var command = new UpdateLoreCommand(id, req.Title, req.Text, req.WorldId);
+                var entity = await mediator.SendAsync(command, ct);
+                return Ok(new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
             }
-
-            entity.Title = req.Title;
-            entity.Text = req.Text;
-            entity.WorldId = req.WorldId;
-
-            await ctx.SaveChangesAsync(ct);
-            return Ok(new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
+            catch (InvalidOperationException ex) when (ex.Message.Contains("Lore"))
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("World"))
+            {
+                return BadRequest(new { error = "WorldNotFound" });
+            }
         }
 
         // DELETE /lore/{id}
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            var entity = await ctx.Set<Lore>().FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (entity is null) return NotFound();
-
-            ctx.Remove(entity);
-            await ctx.SaveChangesAsync(ct);
-            return NoContent();
+            try
+            {
+                var command = new DeleteLoreCommand(id);
+                await mediator.SendAsync(command, ct);
+                return NoContent();
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound();
+            }
         }
 
         [HttpPost("suggest")]
@@ -101,33 +96,10 @@ namespace Npc.Api.Controllers
                 return BadRequest(new { error = "PromptRequired" });
 
             var count = req.Count is < 1 or > 10 ? 1 : req.Count;
-            var adjusted = req with { Count = count };
+            var command = new SuggestLoreCommand(req.WorldId, req.Prompt, count, req.DryRun);
+            var response = await mediator.SendAsync(command, ct);
 
-            var items = await svc.GenerateLoreAsync(adjusted, ct);
-            if (items.Length == 0)
-                return Ok(new LoreSuggestResponse(false, Array.Empty<LoreSuggestedItem>()));
-
-            if (req.DryRun) // no persist
-                return Ok(new LoreSuggestResponse(false, items));
-
-            var now = DateTimeOffset.UtcNow;
-            foreach (var it in items)
-            {
-                var entity = new Lore
-                {
-                    Title = it.Title,
-                    Text = it.Text,
-                    WorldId = req.WorldId,
-                    IsGenerated = true,
-                    GenerationSource = "agent",
-                    GenerationMeta = it.Model is null ? null : $"{{\"model\":\"{it.Model}\"}}",
-                    GeneratedAt = now
-                };
-                ctx.Add(entity);
-            }
-            await ctx.SaveChangesAsync(ct);
-
-            return Ok(new LoreSuggestResponse(true, items));
+            return Ok(response);
         }
     }
 }

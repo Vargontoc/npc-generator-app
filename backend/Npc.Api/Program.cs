@@ -157,11 +157,34 @@ builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Comm
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteCharacterCommand>, Application.Commands.DeleteCharacterCommandHandler>();
 
-// Query Handlers
+// Character Query Handlers
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.GetCharacterByIdQueryHandler>();
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.GetCharactersPagedQueryHandler>();
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersByAgeRangeQuery, IEnumerable<Entities.Character>>, Application.Queries.GetCharactersByAgeRangeQueryHandler>();
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchCharactersByNameQuery, IEnumerable<Entities.Character>>, Application.Queries.SearchCharactersByNameQueryHandler>();
+
+// World Command Handlers
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateWorldCommand, Entities.World>, Application.Commands.CreateWorldCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateWorldCommand, Entities.World>, Application.Commands.UpdateWorldCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteWorldCommand>, Application.Commands.DeleteWorldCommandHandler>();
+
+// World Query Handlers
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldByIdQuery, Entities.World?>, Application.Queries.GetWorldByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsPagedQuery, (IEnumerable<Entities.World> Items, int TotalCount)>, Application.Queries.GetWorldsPagedQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsWithLoreQuery, IEnumerable<Entities.World>>, Application.Queries.GetWorldsWithLoreQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldWithLoreByIdQuery, Entities.World?>, Application.Queries.GetWorldWithLoreByIdQueryHandler>();
+
+// Lore Command Handlers
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateLoreCommand, Entities.Lore>, Application.Commands.CreateLoreCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateLoreCommand, Entities.Lore>, Application.Commands.UpdateLoreCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteLoreCommand>, Application.Commands.DeleteLoreCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.SuggestLoreCommand, Dtos.LoreSuggestResponse>, Application.Commands.SuggestLoreCommandHandler>();
+
+// Lore Query Handlers
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByIdQuery, Entities.Lore?>, Application.Queries.GetLoreByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByWorldIdQuery, IEnumerable<Entities.Lore>>, Application.Queries.GetLoreByWorldIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetGeneratedLoreQuery, IEnumerable<Entities.Lore>>, Application.Queries.GetGeneratedLoreQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchLoreByTextQuery, IEnumerable<Entities.Lore>>, Application.Queries.SearchLoreByTextQueryHandler>();
 
 builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
 {
