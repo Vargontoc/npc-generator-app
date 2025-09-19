@@ -34,9 +34,15 @@ builder.Services.AddCors(o =>
     o.AddPolicy("Default", p =>
     {
         if (origins.Length > 0)
-            p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+            p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
         else
-            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod(); // fallback
+        {
+            // En producción, deshabilitar AllowAnyOrigin por seguridad
+            if (builder.Environment.IsDevelopment())
+                p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            else
+                p.WithOrigins("https://localhost", "https://127.0.0.1").AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        }
     });
 });
 
