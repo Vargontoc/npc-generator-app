@@ -518,7 +518,7 @@ namespace Npc.Api.Services.Impl
                 var nodeVar = $"u{idx}";
                 var nodeId = u.Id is not null && req.PreserveIds ? u.Id.Value : Guid.NewGuid();
                 sb.AppendLine($"""
-                    MERGE ({nodeVar}:Utterance id:'{nodeId}')
+                    MERGE ({nodeVar}:Utterance {{id:'{nodeId}'}})
                     SET {nodeVar}.text = $p{idx}_text,
                         {nodeVar}.characterId = $p{idx}_char,
                         {nodeVar}.deleted = coalesce($p{idx}_del,false),
@@ -541,14 +541,14 @@ namespace Npc.Api.Services.Impl
                 if (r.Type == "ROOT")
                 {
                     sb.AppendLine($"""
-                        MATCH (c:Conversation id:$cid),(ru:Utterance id:'{r.To}')
+                        MATCH (c:Conversation {{id:$cid}}),(ru:Utterance {{id:'{r.To}'}})
                         MERGE (c)-[:ROOT]->(ru)
                         """);
                 }
                 else
                 {
                     sb.AppendLine($"""
-                        MATCH (fa:Utterance id:'{r.From}'),(ta:Utterance d:'{r.To}')
+                        MATCH (fa:Utterance {{id:'{r.From}'}}),(ta:Utterance {{id:'{r.To}'}})
                         MERGE (fa)-[rel:{r.Type}]->(ta)
                         """);
                     if (r.Type == "BRANCH_TO")
