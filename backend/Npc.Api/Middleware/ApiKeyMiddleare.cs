@@ -31,8 +31,7 @@ namespace Npc.Api.Middleware
                 return;
             }
 
-            var provided = ctx.Request.Headers["X-API-Key"].FirstOrDefault()
-                        ?? ctx.Request.Query["api_key"].FirstOrDefault();
+            var provided = ctx.Request.Headers["X-API-Key"].FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(provided) || !keys.Contains(provided))
             {
