@@ -56,7 +56,7 @@ namespace Npc.Api.Controllers
             if (advisory.HasAdvisory)
                 Response.Headers.Append("X-Moderation-Warnings", string.Join(",", advisory.Flags));
 
-            var entity = await ctx.Set<Character>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            var entity = await ctx.Set<Character>().FirstOrDefaultAsync(x => x.Id == id, ct);
 
             if (entity is null) return NotFound();
             entity.Name = req.Name;

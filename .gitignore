@@ -1,8 +1,82 @@
+########################
+# .NET / C#
+########################
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.coverage
+*.coveragexml
+*.nupkg
+.nuget/
+publish/
+out/
+*.sln
+appsettings.*.json
+########################
+# EF Core (keep migrations, ignore temp)
+########################
+[Mm]igrations/**/obj/
+[Mm]igrations/**/bin/
+
+########################
+# Logs / Diagnostics
+########################
+logs/
+*.log
+*.etl
+*.diagsession
+
+########################
+# IDE / Editors
+########################
+.vs/
+.idea/
+*.iml
+*.sw?
+*.orig
+
+########################
+# Frontend (Vite / Node)
+########################
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+########################
+# Frontend env files
+########################
 .env
 .env.*
-*.sln
 !.env.example
+!.env.*.example
 
-backend/Npc.Api/bin/**
-backend/Npc.Api/obj/**
-backend/Npc.Api/appsettings.*.json
+
+########################
+# Cache / Misc
+########################
+*.cache
+*.tmp
+*.temp
+Thumbs.db
+.DS_Store
+
+########################
+# Docker / Local data
+########################
+docker-data/
+**/data/
+**/cache/
+
+########################
+# Generated Assets
+########################
