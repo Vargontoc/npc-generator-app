@@ -181,6 +181,7 @@ builder.Services.AddHttpClient<IImageGenService, ImageGenService>((sp, http) =>
 builder.Services.AddScoped<IAgentConversationService, AgentConversationService>();
 builder.Services.AddScoped<ITtsService, TtsService>();
 builder.Services.AddScoped<IImageGenService, ImageGenService>();
+builder.Services.AddScoped<Infrastructure.Audit.IAuditService, Infrastructure.Audit.AuditService>();
 
 var app = builder.Build();
 
