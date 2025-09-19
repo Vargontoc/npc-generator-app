@@ -152,6 +152,24 @@ builder.Services.AddScoped<Repositories.IConversationRepository, Repositories.Co
 // CQRS Pattern
 builder.Services.AddScoped<Application.Mediator.IMediator, Application.Mediator.SimpleMediator>();
 
+// Domain Events
+builder.Services.AddScoped<Domain.Events.IDomainEventDispatcher, Domain.Events.DomainEventDispatcher>();
+
+// Domain Event Handlers
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CharacterCreatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterUpdatedEvent>, Domain.Events.Handlers.CharacterUpdatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterDeletedEvent>, Domain.Events.Handlers.CharacterDeletedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.WorldCreatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.ConversationCreatedEvent>, Domain.Events.Handlers.ConversationCreatedEventHandler>();
+
+// Cache invalidation handlers
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+
 // Command Handlers
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateCharacterCommand, Entities.Character>, Application.Commands.CreateCharacterCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();

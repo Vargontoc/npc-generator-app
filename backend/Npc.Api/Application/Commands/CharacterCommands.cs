@@ -3,6 +3,7 @@ using Npc.Api.Dtos;
 using Npc.Api.Repositories;
 using Npc.Api.Services;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands
 {
@@ -17,15 +18,18 @@ namespace Npc.Api.Application.Commands
         private readonly ICharacterRepository _repository;
         private readonly IModerationService _moderationService;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
         public CreateCharacterCommandHandler(
             ICharacterRepository repository,
             IModerationService moderationService,
-            IAuditService auditService)
+            IAuditService auditService,
+            IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _moderationService = moderationService;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Character> HandleAsync(CreateCharacterCommand command, CancellationToken ct = default)
@@ -49,6 +53,9 @@ namespace Npc.Api.Application.Commands
             // Telemetry
             Infrastructure.Observability.Telemetry.CharactersCreated.Add(1);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new CharacterCreatedEvent(createdCharacter), ct);
+
             return createdCharacter;
         }
     }
@@ -58,15 +65,18 @@ namespace Npc.Api.Application.Commands
         private readonly ICharacterRepository _repository;
         private readonly IModerationService _moderationService;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
         public UpdateCharacterCommandHandler(
             ICharacterRepository repository,
             IModerationService moderationService,
-            IAuditService auditService)
+            IAuditService auditService,
+            IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _moderationService = moderationService;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Character> HandleAsync(UpdateCharacterCommand command, CancellationToken ct = default)
@@ -92,6 +102,9 @@ namespace Npc.Api.Application.Commands
             // Audit trail
             await _auditService.LogCharacterChangeAsync("UPDATE", updatedCharacter.Id, oldCharacter, updatedCharacter, "api-user", ct);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new CharacterUpdatedEvent(updatedCharacter, oldCharacter), ct);
+
             return updatedCharacter;
         }
     }
@@ -100,11 +113,13 @@ namespace Npc.Api.Application.Commands
     {
         private readonly ICharacterRepository _repository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public DeleteCharacterCommandHandler(ICharacterRepository repository, IAuditService auditService)
+        public DeleteCharacterCommandHandler(ICharacterRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Unit> HandleAsync(DeleteCharacterCommand command, CancellationToken ct = default)
@@ -120,6 +135,9 @@ namespace Npc.Api.Application.Commands
 
             // Audit trail
             await _auditService.LogCharacterChangeAsync("DELETE", command.Id, deletedCharacter, null, "api-user", ct);
+
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new CharacterDeletedEvent(command.Id, deletedCharacter), ct);
 
             return Unit.Value;
         }
