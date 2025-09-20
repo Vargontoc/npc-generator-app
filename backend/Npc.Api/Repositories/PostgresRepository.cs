@@ -5,7 +5,7 @@ using Npc.Api.Entities;
 
 namespace Npc.Api.Repositories
 {
-    public abstract class PostgresRepository<T> : IRepository<T> where T : BaseEntity
+    public abstract class PostgresRepository<T> : IRepository<T>, IBulkRepository<T> where T : BaseEntity
     {
         protected readonly CharacterDbContext _context;
         protected readonly DbSet<T> _dbSet;
@@ -75,6 +75,65 @@ namespace Npc.Api.Repositories
 
             return (items, totalCount);
         }
+
+        // Bulk Operations Implementation
+        public virtual async Task<IEnumerable<T>> BulkAddAsync(IEnumerable<T> entities, CancellationToken ct = default)
+        {
+            var entitiesArray = entities.ToArray();
+
+            foreach (var entity in entitiesArray)
+            {
+                entity.CreatedAt = DateTimeOffset.UtcNow;
+                entity.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            await _dbSet.AddRangeAsync(entitiesArray, ct);
+            await _context.SaveChangesAsync(ct);
+
+            return entitiesArray;
+        }
+
+        public virtual async Task<IEnumerable<T>> BulkUpdateAsync(IEnumerable<T> entities, CancellationToken ct = default)
+        {
+            var entitiesArray = entities.ToArray();
+
+            foreach (var entity in entitiesArray)
+            {
+                entity.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            _dbSet.UpdateRange(entitiesArray);
+            await _context.SaveChangesAsync(ct);
+
+            return entitiesArray;
+        }
+
+        public virtual async Task BulkDeleteAsync(IEnumerable<Guid> ids, CancellationToken ct = default)
+        {
+            var idsArray = ids.ToArray();
+            var entities = await _dbSet
+                .Where(e => idsArray.Contains(e.Id))
+                .ToListAsync(ct);
+
+            if (entities.Any())
+            {
+                _dbSet.RemoveRange(entities);
+                await _context.SaveChangesAsync(ct);
+            }
+        }
+
+        public virtual async Task<int> BulkDeleteByConditionAsync(Expression<Func<T, bool>> predicate, CancellationToken ct = default)
+        {
+            var entities = await _dbSet.Where(predicate).ToListAsync(ct);
+
+            if (entities.Any())
+            {
+                _dbSet.RemoveRange(entities);
+                await _context.SaveChangesAsync(ct);
+            }
+
+            return entities.Count;
+        }
     }
 
     public class CharacterRepository : PostgresRepository<Character>, ICharacterRepository
@@ -104,7 +163,7 @@ namespace Npc.Api.Repositories
     {
         public WorldRepository(CharacterDbContext context) : base(context) { }
 
-        public async Task<IEnumerable<World>> GetWithLoreAsync(CancellationToken ct = default)
+        public async Task<IEnumerable<World>> GetWorldsWithLoreAsync(CancellationToken ct = default)
         {
             return await _dbSet
                 .AsNoTracking()
@@ -113,7 +172,7 @@ namespace Npc.Api.Repositories
                 .ToListAsync(ct);
         }
 
-        public async Task<World?> GetWithLoreByIdAsync(Guid worldId, CancellationToken ct = default)
+        public async Task<World?> GetWorldWithLoreByIdAsync(Guid worldId, CancellationToken ct = default)
         {
             return await _dbSet
                 .AsNoTracking()
@@ -126,7 +185,7 @@ namespace Npc.Api.Repositories
     {
         public LoreRepository(CharacterDbContext context) : base(context) { }
 
-        public async Task<IEnumerable<Lore>> GetByWorldIdAsync(Guid worldId, CancellationToken ct = default)
+        public async Task<IEnumerable<Lore>> GetByWorldIdAsync(Guid? worldId, CancellationToken ct = default)
         {
             return await _dbSet
                 .AsNoTracking()

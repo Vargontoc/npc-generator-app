@@ -205,6 +205,11 @@ builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Comm
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteCharacterCommand>, Application.Commands.DeleteCharacterCommandHandler>();
 
+// Bulk Command Handlers
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkCreateCharactersCommand, Application.Commands.BulkOperationResult<Entities.Character>>, Application.Commands.BulkCreateCharactersCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkUpdateCharactersCommand, Application.Commands.BulkOperationResult<Entities.Character>>, Application.Commands.BulkUpdateCharactersCommandHandler>();
+builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkDeleteCharactersCommand, Application.Commands.BulkOperationResult<Application.Commands.Unit>>, Application.Commands.BulkDeleteCharactersCommandHandler>();
+
 // Character Query Handlers - Using Cached Versions
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.CachedGetCharacterByIdQueryHandler>();
 builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.CachedGetCharactersPagedQueryHandler>();
