@@ -2,6 +2,7 @@ using AutoMapper;
 using Npc.Api.Entities;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Infrastructure.Exceptions;
 using Npc.Api.Services;
 using Npc.Api.Dtos;
 using Npc.Api.Domain.Events;
@@ -39,7 +40,7 @@ namespace Npc.Api.Application.Commands
             {
                 var worldExists = await _worldRepository.ExistsAsync(command.Request.WorldId.Value, ct);
                 if (!worldExists)
-                    throw new InvalidOperationException($"World with ID {command.Request.WorldId} not found");
+                    throw new EntityNotFoundException("World", command.Request.WorldId.Value);
             }
 
             // Use AutoMapper to convert DTO to Entity
@@ -78,14 +79,14 @@ namespace Npc.Api.Application.Commands
         {
             var existingLore = await _repository.GetByIdAsync(command.Id, ct);
             if (existingLore == null)
-                throw new InvalidOperationException($"Lore with ID {command.Id} not found");
+                throw new EntityNotFoundException("Lore", command.Id);
 
             // Business logic: Validate world exists if provided
             if (command.Request.WorldId is not null)
             {
                 var worldExists = await _worldRepository.ExistsAsync(command.Request.WorldId.Value, ct);
                 if (!worldExists)
-                    throw new InvalidOperationException($"World with ID {command.Request.WorldId} not found");
+                    throw new EntityNotFoundException("World", command.Request.WorldId.Value);
             }
 
             // Capture old values for audit
@@ -123,7 +124,7 @@ namespace Npc.Api.Application.Commands
         {
             var lore = await _repository.GetByIdAsync(command.Id, ct);
             if (lore == null)
-                throw new InvalidOperationException($"Lore with ID {command.Id} not found");
+                throw new EntityNotFoundException("Lore", command.Id);
 
             // Capture entity for audit before deletion
             var deletedLore = new { lore.Id, lore.Title, lore.Text, lore.WorldId };

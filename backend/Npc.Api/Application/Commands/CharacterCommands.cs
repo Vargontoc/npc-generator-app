@@ -4,6 +4,7 @@ using Npc.Api.Dtos;
 using Npc.Api.Repositories;
 using Npc.Api.Services;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Infrastructure.Exceptions;
 using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands
@@ -85,7 +86,7 @@ namespace Npc.Api.Application.Commands
         {
             var existingCharacter = await _repository.GetByIdAsync(command.Id, ct);
             if (existingCharacter == null)
-                throw new InvalidOperationException($"Character with ID {command.Id} not found");
+                throw new EntityNotFoundException("Character", command.Id);
 
             // Business logic: Moderation check
             var advisory = await _moderationService.AnalyzeAsync(command.Request.Age, command.Request.Description, ct);
@@ -125,7 +126,7 @@ namespace Npc.Api.Application.Commands
         {
             var character = await _repository.GetByIdAsync(command.Id, ct);
             if (character == null)
-                throw new InvalidOperationException($"Character with ID {command.Id} not found");
+                throw new EntityNotFoundException("Character", command.Id);
 
             // Capture entity for audit before deletion
             var deletedCharacter = new { character.Id, character.Name, character.Age, character.Description, character.AvatarUrl };

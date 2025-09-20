@@ -3,6 +3,7 @@ using Npc.Api.Entities;
 using Npc.Api.Dtos;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Infrastructure.Exceptions;
 using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands
@@ -64,7 +65,7 @@ namespace Npc.Api.Application.Commands
         {
             var existingWorld = await _repository.GetByIdAsync(command.Id, ct);
             if (existingWorld == null)
-                throw new InvalidOperationException($"World with ID {command.Id} not found");
+                throw new EntityNotFoundException("World", command.Id);
 
             // Capture old values for audit
             var oldWorld = new { existingWorld.Name, existingWorld.Description };
@@ -101,7 +102,7 @@ namespace Npc.Api.Application.Commands
         {
             var world = await _repository.GetByIdAsync(command.Id, ct);
             if (world == null)
-                throw new InvalidOperationException($"World with ID {command.Id} not found");
+                throw new EntityNotFoundException("World", command.Id);
 
             // Capture entity for audit before deletion
             var deletedWorld = new { world.Id, world.Name, world.Description };

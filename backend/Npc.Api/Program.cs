@@ -125,6 +125,10 @@ builder.Services.Configure<ImageGenOptions>(builder.Configuration.GetSection("Im
 // AutoMapper Configuration
 builder.Services.AddAutoMapper(typeof(Program));
 
+// Global Exception Handler
+builder.Services.AddExceptionHandler<Infrastructure.Exceptions.GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
@@ -263,6 +267,10 @@ var app = builder.Build();
 
 app.UseCors("Default");
 app.UseRateLimiter();
+
+// Exception handling middleware (must be early in pipeline)
+app.UseExceptionHandler();
+
 app.UseApiKeyAuth();
 app.MapControllers().RequireRateLimiting("global");
 
