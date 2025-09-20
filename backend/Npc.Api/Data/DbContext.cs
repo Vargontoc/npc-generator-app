@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using Microsoft.EntityFrameworkCore;
 using Npc.Api.Entities;
 
@@ -8,10 +7,15 @@ public class CharacterDbContext : DbContext
 {
     public CharacterDbContext(DbContextOptions<CharacterDbContext> opts) : base(opts) { }
 
+    public DbSet<Character> Characters { get; set; }
+    public DbSet<World> Worlds { get; set; }
+    public DbSet<Lore> LoreEntries { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasDefaultSchema("public");
 
         // Characters
         var character = modelBuilder.Entity<Character>();
@@ -44,7 +48,7 @@ public class CharacterDbContext : DbContext
         lore.Property(l => l.UpdatedAt).IsRequired();
         lore.HasOne(l => l.World).WithMany(w => w.LoreEntries).HasForeignKey(l => l.WorldId).OnDelete(DeleteBehavior.SetNull);
     }
-    
+
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -60,10 +64,12 @@ public class CharacterDbContext : DbContext
                     {
                         entry.CurrentValues["CreatedAt"] = now;
                     }
-                } 
+                }
             }
         }
 
         return base.SaveChangesAsync(cancellationToken);
     }
+    
+
 }

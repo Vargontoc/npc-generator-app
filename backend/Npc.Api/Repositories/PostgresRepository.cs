@@ -179,6 +179,23 @@ namespace Npc.Api.Repositories
                 .Include(w => w.LoreEntries)
                 .FirstOrDefaultAsync(w => w.Id == worldId, ct);
         }
+
+        public async Task<IEnumerable<World>> GetWithLoreAsync(CancellationToken ct = default)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(w => w.LoreEntries)
+                .OrderByDescending(w => w.CreatedAt)
+                .ToListAsync(ct);
+        }
+
+        public async Task<World?> GetWithLoreByIdAsync(Guid worldId, CancellationToken ct = default)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(w => w.LoreEntries)
+                .FirstOrDefaultAsync(w => w.Id == worldId, ct);
+        }
     }
 
     public class LoreRepository : PostgresRepository<Lore>, ILoreRepository
@@ -192,6 +209,11 @@ namespace Npc.Api.Repositories
                 .Where(l => l.WorldId == worldId)
                 .OrderByDescending(l => l.CreatedAt)
                 .ToListAsync(ct);
+        }
+
+        public async Task<IEnumerable<Lore>> GetByWorldIdAsync(Guid worldId, CancellationToken ct = default)
+        {
+            return await GetByWorldIdAsync((Guid?)worldId, ct);
         }
 
         public async Task<IEnumerable<Lore>> GetGeneratedLoreAsync(CancellationToken ct = default)

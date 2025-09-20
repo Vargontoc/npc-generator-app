@@ -1,5 +1,6 @@
 using Npc.Api.Dtos;
 using Npc.Api.Repositories;
+using Npc.Api.Services;
 
 namespace Npc.Api.Application.Queries
 {

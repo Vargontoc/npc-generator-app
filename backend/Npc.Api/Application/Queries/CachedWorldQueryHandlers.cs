@@ -67,8 +67,8 @@ namespace Npc.Api.Application.Queries
             var cacheKey = CacheKeys.WorldsPaged(query.Page, query.PageSize);
 
             // Try to get from cache first
-            var cached = await _cache.GetAsync<(IEnumerable<World> Items, int TotalCount)>(cacheKey, ct);
-            if (cached.Items is not null)
+            var cached = await _cache.GetAsync<PagedResult<World>>(cacheKey, ct);
+            if (cached is not null)
             {
                 _logger.LogDebug("Paged worlds (page {Page}, size {PageSize}) found in cache", query.Page, query.PageSize);
                 return cached;
@@ -78,7 +78,8 @@ namespace Npc.Api.Application.Queries
             var result = await _repository.GetPagedAsync(query.Page, query.PageSize, ct);
 
             // Cache for 10 minutes
-            await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(10), ct);
+            var pagedResult = new PagedResult<World>(result.Items, result.TotalCount);
+            await _cache.SetAsync(cacheKey, pagedResult, TimeSpan.FromMinutes(10), ct);
             _logger.LogDebug("Paged worlds (page {Page}, size {PageSize}) cached for 10 minutes", query.Page, query.PageSize);
 
             return result;

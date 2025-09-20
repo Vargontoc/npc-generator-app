@@ -142,22 +142,22 @@ namespace Npc.Api.Application.Queries
 
         public async Task<IEnumerable<Lore>> HandleAsync(SearchLoreByTextQuery query, CancellationToken ct = default)
         {
-            var cacheKey = CacheKeys.LoreSearch(query.SearchText, 1, 100); // Default pagination for search
+            var cacheKey = CacheKeys.LoreSearch(query.SearchTerm, 1, 100); // Default pagination for search
 
             // Try to get from cache first
             var cached = await _cache.GetAsync<IEnumerable<Lore>>(cacheKey, ct);
             if (cached is not null)
             {
-                _logger.LogDebug("Lore search for '{SearchText}' found in cache", query.SearchText);
+                _logger.LogDebug("Lore search for '{SearchTerm}' found in cache", query.SearchTerm);
                 return cached;
             }
 
             // Not in cache, get from repository
-            var lore = await _repository.SearchByTextAsync(query.SearchText, ct);
+            var lore = await _repository.SearchByTextAsync(query.SearchTerm, ct);
 
             // Cache for 10 minutes
             await _cache.SetAsync(cacheKey, lore, TimeSpan.FromMinutes(10), ct);
-            _logger.LogDebug("Lore search for '{SearchText}' cached for 10 minutes", query.SearchText);
+            _logger.LogDebug("Lore search for '{SearchTerm}' cached for 10 minutes", query.SearchTerm);
 
             return lore;
         }

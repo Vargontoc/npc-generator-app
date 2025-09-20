@@ -1,6 +1,8 @@
+using Npc.Api.Entities;
+
 namespace Npc.Api.Repositories
 {
-    public interface IBulkRepository<T> where T : class
+    public interface IBulkRepository<T> where T : class, IEntity
     {
         Task<IEnumerable<T>> BulkAddAsync(IEnumerable<T> entities, CancellationToken ct = default);
         Task<IEnumerable<T>> BulkUpdateAsync(IEnumerable<T> entities, CancellationToken ct = default);
@@ -12,7 +14,7 @@ namespace Npc.Api.Repositories
     public interface ICharacterRepository : IRepository<Entities.Character>, IBulkRepository<Entities.Character>
     {
         // Character-specific methods remain the same
-        Task<(IEnumerable<Entities.Character> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
+        new Task<(IEnumerable<Entities.Character> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
         Task<IEnumerable<Entities.Character>> GetByAgeRangeAsync(int minAge, int maxAge, CancellationToken ct = default);
         Task<IEnumerable<Entities.Character>> SearchByNameAsync(string name, CancellationToken ct = default);
     }
@@ -20,9 +22,11 @@ namespace Npc.Api.Repositories
     public interface IWorldRepository : IRepository<Entities.World>, IBulkRepository<Entities.World>
     {
         // World-specific methods remain the same
-        Task<(IEnumerable<Entities.World> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
+        new Task<(IEnumerable<Entities.World> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, CancellationToken ct = default);
         Task<IEnumerable<Entities.World>> GetWorldsWithLoreAsync(CancellationToken ct = default);
-        Task<Entities.World?> GetWorldWithLoreByIdAsync(Guid id, CancellationToken ct = default);
+        Task<Entities.World?> GetWorldWithLoreByIdAsync(Guid worldId, CancellationToken ct = default);
+        Task<IEnumerable<Entities.World>> GetWithLoreAsync(CancellationToken ct = default);
+        Task<Entities.World?> GetWithLoreByIdAsync(Guid worldId, CancellationToken ct = default);
     }
 
     public interface ILoreRepository : IRepository<Entities.Lore>, IBulkRepository<Entities.Lore>

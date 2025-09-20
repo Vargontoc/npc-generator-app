@@ -56,7 +56,7 @@ namespace Npc.Api.Repositories
             var record = await session.ExecuteReadAsync(async tx =>
             {
                 var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString() });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             if (record == null) return null;
@@ -130,7 +130,7 @@ namespace Npc.Api.Repositories
             var record = await session.ExecuteReadAsync(async tx =>
             {
                 var cursor = await tx.RunAsync(cypher, new { id = utteranceId.ToString() });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             if (record == null) return null;
@@ -162,7 +162,7 @@ namespace Npc.Api.Repositories
                     tags,
                     expectedVersion
                 });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             if (record == null) return null;
@@ -183,7 +183,7 @@ namespace Npc.Api.Repositories
             var record = await session.ExecuteWriteAsync(async tx =>
             {
                 var cursor = await tx.RunAsync(cypher, new { id = utteranceId.ToString() });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             return record != null;
@@ -205,7 +205,7 @@ namespace Npc.Api.Repositories
             var record = await session.ExecuteReadAsync(async tx =>
             {
                 var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString() });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             if (record == null) return null;
@@ -271,7 +271,7 @@ namespace Npc.Api.Repositories
             var record = await session.ExecuteReadAsync(async tx =>
             {
                 var cursor = await tx.RunAsync(cypher, new { cid = conversationId.ToString(), depth = depth });
-                return await cursor.SingleOrDefaultAsync();
+                return await cursor.SingleAsync();
             });
 
             if (record == null) return null;

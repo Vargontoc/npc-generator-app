@@ -4,12 +4,13 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Writers;
 using Neo4j.Driver;
 using Npc.Api.Data;
 using Npc.Api.Infrastructure.Http;
 using Npc.Api.Infrastructure.Metrics;
 using Npc.Api.Infrastructure.Observability;
+using Npc.Api.Infrastructure.BackgroundJobs;
+using Npc.Api.Infrastructure.Middleware;
 using Npc.Api.Middleware;
 using Npc.Api.Services;
 using Npc.Api.Services.Impl;
@@ -17,6 +18,22 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
+using Hangfire;
+using Hangfire.PostgreSql;
+using Npc.Api.Infrastructure.HealthChecks;
+using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Infrastructure.Cache;
+using Npc.Api.Infrastructure.Exceptions;
+using Npc.Api.Infrastructure.Mapping;
+using FluentValidation;
+using Npc.Api.Repositories;
+using Npc.Api.Application.Mediator;
+using Npc.Api.Domain.Events;
+using Npc.Api.Domain.Events.Handlers;
+using Npc.Api.Application.Commands;
+using Npc.Api.Entities;
+using Npc.Api.Application.Queries;
+using Npc.Api.Dtos;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -88,13 +105,17 @@ var neo4jUri = neo4jConf.GetValue<string>("Uri") ?? "";
 var neo4jUser = neo4jConf.GetValue<string>("User") ?? "";
 var neo4jPassword = neo4jConf.GetValue<string>("Password") ?? "";
 
+
+// Redis Cache Configuration
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+
 builder.Services.AddHealthChecks()
     // Basic checks
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "ready" })
 
     // Database health checks
     .AddNpgSql(postgresConnection, name: "postgresql", tags: new[] { "db", "postgresql", "ready" })
-    .AddNeo4j(neo4jUri, neo4jUser, neo4jPassword, name: "neo4j", tags: new[] { "db", "neo4j", "ready" })
+    .AddCheck<Neo4jHealthCheck>("neo4j", tags: new[] { "db", "neo4j", "ready" })
 
     // Redis health check
     .AddRedis(redisConnectionString, name: "redis", tags: new[] { "cache", "redis", "ready" })
@@ -108,10 +129,10 @@ builder.Services.AddHealthChecks()
         name: "image-service", tags: new[] { "external", "image" })
 
     // Custom application health checks
-    .AddCheck<Infrastructure.HealthChecks.ApplicationHealthCheck>("application", tags: new[] { "application", "ready" })
-    .AddCheck<Infrastructure.HealthChecks.CacheHealthCheck>("cache-operations", tags: new[] { "cache", "operations" })
-    .AddCheck<Infrastructure.HealthChecks.ExternalServicesHealthCheck>("external-services", tags: new[] { "external", "services" })
-    .AddCheck<Infrastructure.HealthChecks.DatabaseOperationsHealthCheck>("database-operations", tags: new[] { "db", "operations" });
+    .AddCheck<ApplicationHealthCheck>("application", tags: ["application", "ready"])
+    .AddCheck<CacheHealthCheck>("cache-operations", tags: ["cache", "operations"])
+    .AddCheck<ExternalServicesHealthCheck>("external-services", tags: ["external", "services"])
+    .AddCheck<DatabaseOperationsHealthCheck>("database-operations", tags: ["db", "operations"]);
 
 // Health Checks UI
 builder.Services.AddHealthChecksUI(options =>
@@ -161,11 +182,10 @@ builder.Services.Configure<ImageGenOptions>(builder.Configuration.GetSection("Im
 builder.Services.AddAutoMapper(typeof(Program));
 
 // Global Exception Handler
-builder.Services.AddExceptionHandler<Infrastructure.Exceptions.GlobalExceptionHandler>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
-// Redis Cache Configuration
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisConnectionString;
@@ -173,7 +193,35 @@ builder.Services.AddStackExchangeRedisCache(options =>
 });
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
     StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
-builder.Services.AddScoped<Infrastructure.Cache.ICacheService, Infrastructure.Cache.RedisCacheService>();
+builder.Services.AddScoped<ICacheService, RedisCacheService>();
+
+// Correlation ID Configuration
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICorrelationIdService, CorrelationIdService>();
+builder.Services.AddTransient<HttpCorrelationIdHandler>();
+
+// Hangfire Configuration
+var hangfireConnectionString = builder.Configuration.GetConnectionString("Postgres");
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(options =>
+    {
+        options.UseNpgsqlConnection(hangfireConnectionString);
+
+    }));
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = Environment.ProcessorCount;
+    options.Queues = new[] { "default", "images", "bulk", "cleanup" };
+    options.ServerName = Environment.MachineName + "-npc-service";
+});
+
+// Background Jobs Services
+builder.Services.AddScoped<IBackgroundJobService, HangfireBackgroundJobService>();
+builder.Services.AddScoped<BackgroundJobs>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -181,7 +229,6 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();
-
 
 builder.Services.AddDbContext<CharacterDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
@@ -197,82 +244,82 @@ builder.Services.AddSingleton<IDriver>(_ => GraphDatabase.Driver(neoUri, AuthTok
 builder.Services.AddScoped<IConversationGraphService, ConversationGraphService>();
 
 // Repository Pattern
-builder.Services.AddScoped<Repositories.ICharacterRepository, Repositories.CharacterRepository>();
-builder.Services.AddScoped<Repositories.IWorldRepository, Repositories.WorldRepository>();
-builder.Services.AddScoped<Repositories.ILoreRepository, Repositories.LoreRepository>();
-builder.Services.AddScoped<Repositories.IConversationRepository, Repositories.ConversationRepository>();
+builder.Services.AddScoped<ICharacterRepository, CharacterRepository>();
+builder.Services.AddScoped<IWorldRepository, WorldRepository>();
+builder.Services.AddScoped<ILoreRepository, LoreRepository>();
+builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
 
 // CQRS Pattern
-builder.Services.AddScoped<Application.Mediator.IMediator, Application.Mediator.SimpleMediator>();
+builder.Services.AddScoped<IMediator, SimpleMediator>();
 
 // Domain Events
-builder.Services.AddScoped<Domain.Events.IDomainEventDispatcher, Domain.Events.DomainEventDispatcher>();
+builder.Services.AddScoped<IDomainEventDispatcher,  DomainEventDispatcher>();
 
 // Domain Event Handlers - Database Sync
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CharacterCreatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterUpdatedEvent>, Domain.Events.Handlers.CharacterUpdatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterDeletedEvent>, Domain.Events.Handlers.CharacterDeletedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.WorldCreatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldUpdatedEvent>, Domain.Events.Handlers.WorldUpdatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldDeletedEvent>, Domain.Events.Handlers.WorldDeletedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreCreatedEvent>, Domain.Events.Handlers.LoreCreatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreUpdatedEvent>, Domain.Events.Handlers.LoreUpdatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreDeletedEvent>, Domain.Events.Handlers.LoreDeletedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterCreatedEvent>, CharacterCreatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterUpdatedEvent>, CharacterUpdatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterDeletedEvent>, CharacterDeletedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldCreatedEvent>, WorldCreatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldUpdatedEvent>, WorldUpdatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldDeletedEvent>, WorldDeletedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreCreatedEvent>, LoreCreatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreUpdatedEvent>, LoreUpdatedEventHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreDeletedEvent>, LoreDeletedEventHandler>();
 
 // Domain Event Handlers - Conversation Sync
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.ConversationCreatedEvent>, Domain.Events.Handlers.ConversationMetadataHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.UtteranceCreatedEvent>, Domain.Events.Handlers.UtteranceMetadataHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.UtteranceCreatedEvent>, Domain.Events.Handlers.CharacterRelationshipInferenceHandler>();
+builder.Services.AddScoped<IDomainEventHandler<ConversationCreatedEvent>, ConversationMetadataHandler>();
+builder.Services.AddScoped<IDomainEventHandler<UtteranceCreatedEvent>, UtteranceMetadataHandler>();
+builder.Services.AddScoped<IDomainEventHandler<UtteranceCreatedEvent>, CharacterRelationshipInferenceHandler>();
 
 // Cache invalidation handlers
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterCreatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterUpdatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<CharacterDeletedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldCreatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldUpdatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<WorldDeletedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreCreatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreUpdatedEvent>, CacheInvalidationHandler>();
+builder.Services.AddScoped<IDomainEventHandler<LoreDeletedEvent>, CacheInvalidationHandler>();
 
 // Command Handlers
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateCharacterCommand, Entities.Character>, Application.Commands.CreateCharacterCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteCharacterCommand>, Application.Commands.DeleteCharacterCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<CreateCharacterCommand, Character>, CreateCharacterCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<UpdateCharacterCommand, Character>, UpdateCharacterCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<DeleteCharacterCommand>, DeleteCharacterCommandHandler>();
 
 // Bulk Command Handlers
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkCreateCharactersCommand, Application.Commands.BulkOperationResult<Entities.Character>>, Application.Commands.BulkCreateCharactersCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkUpdateCharactersCommand, Application.Commands.BulkOperationResult<Entities.Character>>, Application.Commands.BulkUpdateCharactersCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.BulkDeleteCharactersCommand, Application.Commands.BulkOperationResult<Application.Commands.Unit>>, Application.Commands.BulkDeleteCharactersCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<BulkCreateCharactersCommand, BulkOperationResult<Character>>, BulkCreateCharactersCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<BulkUpdateCharactersCommand, BulkOperationResult<Character>>, BulkUpdateCharactersCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<BulkDeleteCharactersCommand, BulkOperationResult<Unit>>, BulkDeleteCharactersCommandHandler>();
 
 // Character Query Handlers - Using Cached Versions
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.CachedGetCharacterByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.CachedGetCharactersPagedQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersByAgeRangeQuery, IEnumerable<Entities.Character>>, Application.Queries.CachedGetCharactersByAgeRangeQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchCharactersByNameQuery, IEnumerable<Entities.Character>>, Application.Queries.CachedSearchCharactersByNameQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetCharacterByIdQuery, Character?>, CachedGetCharacterByIdQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetCharactersPagedQuery, (IEnumerable<Character> Items, int TotalCount)>, CachedGetCharactersPagedQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetCharactersByAgeRangeQuery, IEnumerable<Character>>, CachedGetCharactersByAgeRangeQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<SearchCharactersByNameQuery, IEnumerable<Character>>, CachedSearchCharactersByNameQueryHandler>();
 
 // World Command Handlers
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateWorldCommand, Entities.World>, Application.Commands.CreateWorldCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateWorldCommand, Entities.World>, Application.Commands.UpdateWorldCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteWorldCommand>, Application.Commands.DeleteWorldCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<CreateWorldCommand, World>, CreateWorldCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<UpdateWorldCommand, World>, UpdateWorldCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<DeleteWorldCommand>, DeleteWorldCommandHandler>();
 
 // World Query Handlers - Using Cached Versions
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldByIdQuery, Entities.World?>, Application.Queries.CachedGetWorldByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsPagedQuery, (IEnumerable<Entities.World> Items, int TotalCount)>, Application.Queries.CachedGetWorldsPagedQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsWithLoreQuery, IEnumerable<Entities.World>>, Application.Queries.CachedGetWorldsWithLoreQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldWithLoreByIdQuery, Entities.World?>, Application.Queries.CachedGetWorldWithLoreByIdQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetWorldByIdQuery, World?>, CachedGetWorldByIdQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetWorldsPagedQuery, (IEnumerable<World> Items, int TotalCount)>, CachedGetWorldsPagedQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetWorldsWithLoreQuery, IEnumerable<World>>, CachedGetWorldsWithLoreQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetWorldWithLoreByIdQuery, World?>, CachedGetWorldWithLoreByIdQueryHandler>();
 
 // Lore Command Handlers
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateLoreCommand, Entities.Lore>, Application.Commands.CreateLoreCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateLoreCommand, Entities.Lore>, Application.Commands.UpdateLoreCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteLoreCommand>, Application.Commands.DeleteLoreCommandHandler>();
-builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.SuggestLoreCommand, Dtos.LoreSuggestResponse>, Application.Commands.SuggestLoreCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<CreateLoreCommand, Lore>, CreateLoreCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<UpdateLoreCommand, Lore>, UpdateLoreCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<DeleteLoreCommand>, DeleteLoreCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<SuggestLoreCommand, LoreSuggestResponse>, SuggestLoreCommandHandler>();
 
 // Lore Query Handlers - Using Cached Versions
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByIdQuery, Entities.Lore?>, Application.Queries.CachedGetLoreByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByWorldIdQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedGetLoreByWorldIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetGeneratedLoreQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedGetGeneratedLoreQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchLoreByTextQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedSearchLoreByTextQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetLoreByIdQuery, Lore?>, CachedGetLoreByIdQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetLoreByWorldIdQuery, IEnumerable<Lore>>, CachedGetLoreByWorldIdQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<GetGeneratedLoreQuery, IEnumerable<Lore>>, CachedGetGeneratedLoreQueryHandler>();
+builder.Services.AddScoped<IQueryHandler<SearchLoreByTextQuery, IEnumerable<Lore>>, CachedSearchLoreByTextQueryHandler>();
 
 builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
 {
@@ -282,7 +329,8 @@ builder.Services.AddHttpClient<IAgentConversationService, AgentConversationServi
     if (!string.IsNullOrWhiteSpace(opt.Value.ApiKey))
         http.DefaultRequestHeaders.Add("X-API-Key", opt.Value.ApiKey);
     http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
-}).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
+}).AddPolicyHandler(AgentPollyPolicies.CreateComposite())
+.AddHttpMessageHandler<HttpCorrelationIdHandler>();
 
 builder.Services.AddHttpClient<ITtsService, TtsService>((sp, http) =>
 {
@@ -294,7 +342,8 @@ builder.Services.AddHttpClient<ITtsService, TtsService>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
 
 
-}).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
+}).AddPolicyHandler(AgentPollyPolicies.CreateComposite())
+.AddHttpMessageHandler<HttpCorrelationIdHandler>();
 
 builder.Services.AddHttpClient<IImageGenService, ImageGenService>((sp, http) =>
 {
@@ -306,17 +355,22 @@ builder.Services.AddHttpClient<IImageGenService, ImageGenService>((sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(opt.Value.Timeout <= 0 ? 15 : opt.Value.Timeout);
 
 
-}).AddPolicyHandler(AgentPollyPolicies.CreateComposite());
+}).AddPolicyHandler(AgentPollyPolicies.CreateComposite())
+.AddHttpMessageHandler<HttpCorrelationIdHandler>();
 
 
 builder.Services.AddScoped<IAgentConversationService, AgentConversationService>();
 builder.Services.AddScoped<ITtsService, TtsService>();
 builder.Services.AddScoped<IImageGenService, ImageGenService>();
-builder.Services.AddScoped<Infrastructure.Audit.IAuditService, Infrastructure.Audit.AuditService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 
 var app = builder.Build();
 
 app.UseCors("Default");
+
+// Correlation ID middleware (must be early in pipeline)
+app.UseCorrelationId();
+
 app.UseRateLimiter();
 
 // Exception handling middleware (must be early in pipeline)
@@ -353,38 +407,38 @@ app.MapPrometheusScrapingEndpoint("/metrics");
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
 });
 
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = _ => true,
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
 });
 
 // Detailed health check endpoints
 app.MapHealthChecks("/health/db", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("db"),
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
 });
 
 app.MapHealthChecks("/health/cache", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("cache"),
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
 });
 
 app.MapHealthChecks("/health/external", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("external"),
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteResponse
 });
 
 app.MapHealthChecks("/health/detailed", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = _ => true,
-    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteDetailedResponse
+    ResponseWriter = HealthCheckResponseWriter.WriteDetailedResponse
 });
 
 // Health Checks UI (only in development for security)
@@ -395,7 +449,14 @@ if (app.Environment.IsDevelopment())
         options.UIPath = "/health-ui";
         options.ApiPath = "/health-ui-api";
     });
+
+    // Hangfire Dashboard (only in development for security)
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new HangfireAuthorizationFilter() }
+    });
 }
+
 
 app.MapControllers();
 

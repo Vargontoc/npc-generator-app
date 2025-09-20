@@ -515,7 +515,7 @@ namespace Npc.Api.Services.Impl
             {
                 var nodeVar = $"u{idx}";
                 var nodeId = u.Id is not null && req.PreserveIds ? u.Id.Value : Guid.NewGuid();
-                sb.AppendLine($"""
+                sb.AppendLine($@"
                     MERGE ({nodeVar}:Utterance {{id:'{nodeId}'}})
                     SET {nodeVar}.text = $p{idx}_text,
                         {nodeVar}.characterId = $p{idx}_char,
@@ -523,8 +523,7 @@ namespace Npc.Api.Services.Impl
                         {nodeVar}.version = coalesce($p{idx}_ver,1),
                         {nodeVar}.tags = coalesce($p{idx}_tags,[]),
                         {nodeVar}.updatedAt = datetime(),
-                        {nodeVar}.createdAt = coalesce({nodeVar}.createdAt, datetime())
-                    """);
+                        {nodeVar}.createdAt = coalesce({nodeVar}.createdAt, datetime())");
                 idx++;
             }
 
@@ -538,14 +537,14 @@ namespace Npc.Api.Services.Impl
                 var r = rels[i];
                 if (r.Type == "ROOT")
                 {
-                    sb.AppendLine($"""
+                    sb.AppendLine($@"""
                         MATCH (c:Conversation {{id:$cid}}),(ru:Utterance {{id:'{r.To}'}})
                         MERGE (c)-[:ROOT]->(ru)
                         """);
                 }
                 else
                 {
-                    sb.AppendLine($"""
+                    sb.AppendLine($@"""
                         MATCH (fa:Utterance {{id:'{r.From}'}}),(ta:Utterance {{id:'{r.To}'}})
                         MERGE (fa)-[rel:{r.Type}]->(ta)
                         """);

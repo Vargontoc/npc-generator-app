@@ -5,7 +5,7 @@ using Npc.Api.Infrastructure.Metrics;
 
 namespace Npc.Api.Services.Impl
 {
-    public class ImageGenService(HttpClient client, IOptions<ImageGenOptions> opts, ImageGenMetrics metrics, ILogger<ImageGenService> logger) : IImageGenService
+    public class ImageGenService(HttpClient client, IOptions<ImageGenOptions> opts) : IImageGenService
     {
          private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
         public async Task<ImageJobAccepted> GenerateAsync(ImageRequest req, CancellationToken ct)

@@ -40,7 +40,7 @@ namespace Npc.Api.Application.Mediator
             if (method == null)
                 throw new InvalidOperationException($"HandleAsync method not found for {handlerType}");
 
-            var task = (Task<TResult>)method.Invoke(handler, new object[] { query, ct })!;
+            var task = (Task<TResult>)method.Invoke(handler, [query, ct])!;
             return await task;
         }
     }

@@ -159,7 +159,7 @@ namespace Npc.Api.Controllers
         /// <param name="ct">Cancellation token</param>
         /// <returns>Number of characters deleted</returns>
         [HttpDelete("by-age")]
-        public async Task<ActionResult<BulkDeleteByConditionResponse>> BulkDeleteCharactersByAge(
+        public ActionResult<BulkDeleteByConditionResponse> BulkDeleteCharactersByAge(
             [FromQuery] int minAge,
             [FromQuery] int maxAge,
             CancellationToken ct = default)

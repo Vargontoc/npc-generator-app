@@ -4,7 +4,6 @@ using Npc.Api.Dtos;
 using Npc.Api.Repositories;
 using Npc.Api.Services;
 using Npc.Api.Infrastructure.Audit;
-using Npc.Api.Infrastructure.Exceptions;
 using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands

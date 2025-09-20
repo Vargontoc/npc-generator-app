@@ -60,13 +60,13 @@ namespace Npc.Api.Domain.Events
             {
                 try
                 {
-                    var task = (Task)handleMethod.Invoke(handler, new object[] { domainEvent, ct })!;
+                    var task = (Task)handleMethod.Invoke(handler, [domainEvent, ct])!;
                     return task;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error invoking handler {HandlerType} for event {EventType}",
-                        handler.GetType().Name, domainEvent.EventType);
+                        handler == null ? "Unknown handler" : handler.GetType().Name, domainEvent.EventType);
                     return Task.CompletedTask;
                 }
             });

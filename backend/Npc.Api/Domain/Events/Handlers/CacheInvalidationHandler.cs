@@ -77,9 +77,9 @@ namespace Npc.Api.Domain.Events.Handlers
 
         public async Task HandleAsync(LoreDeletedEvent domainEvent, CancellationToken ct = default)
         {
-            // Extract WorldId from the old lore data if available
-            var worldId = domainEvent.OldLore != null && domainEvent.OldLore.GetType().GetProperty("WorldId") != null
-                ? (Guid?)domainEvent.OldLore.GetType().GetProperty("WorldId")?.GetValue(domainEvent.OldLore)
+            // Extract WorldId from the deleted values if available
+            var worldId = domainEvent.DeletedValues != null && domainEvent.DeletedValues.GetType().GetProperty("WorldId") != null
+                ? (Guid?)domainEvent.DeletedValues.GetType().GetProperty("WorldId")?.GetValue(domainEvent.DeletedValues)
                 : null;
 
             await InvalidateCachePatterns("lore", domainEvent.LoreId, worldId, ct);

@@ -1,10 +1,6 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npc.Api.Data;
 using Npc.Api.Dtos;
-using Npc.Api.Entities;
 using Npc.Api.Application.Mediator;
 using Npc.Api.Application.Commands;
 using Npc.Api.Application.Queries;

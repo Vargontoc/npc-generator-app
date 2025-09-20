@@ -1,12 +1,6 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Npc.Api.Data;
 using Npc.Api.Dtos;
-using Npc.Api.Entities;
-using Npc.Api.Services;
-using Npc.Api.Infrastructure.Audit;
-using Npc.Api.Repositories;
 using Npc.Api.Application.Mediator;
 using Npc.Api.Application.Commands;
 using Npc.Api.Application.Queries;

@@ -15,6 +15,7 @@ namespace Npc.Api.Infrastructure.Observability
         public static readonly Counter<long> TtsErrors = Meter.CreateCounter<long>("tts_errors_total");
         public static readonly Counter<long> ImageJobsRequested = Meter.CreateCounter<long>("image_jobs_requested_total");
         public static readonly Counter<long> ImageJobsCompleted = Meter.CreateCounter<long>("image_jobs_completed_total");
+        public static readonly Counter<long> ErrorsTotal = Meter.CreateCounter<long>("errors_total");
 
         // Histograms (ms)
         public static readonly Histogram<double> AgentCallDurationMs = Meter.CreateHistogram<double>("agent_call_duration_ms");

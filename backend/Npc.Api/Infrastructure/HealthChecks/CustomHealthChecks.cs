@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Neo4j.Driver;
 using Npc.Api.Infrastructure.Cache;
 using Npc.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace Npc.Api.Infrastructure.HealthChecks
 {
@@ -141,17 +142,17 @@ namespace Npc.Api.Infrastructure.HealthChecks
             if (healthyCount == totalCount)
             {
                 _logger.LogDebug("All external services are healthy ({HealthyCount}/{TotalCount})", healthyCount, totalCount);
-                return HealthCheckResult.Healthy($"All external services are healthy ({healthyCount}/{totalCount})", data);
+                return HealthCheckResult.Healthy($"All external services are healthy ({healthyCount}/{totalCount})", (IReadOnlyDictionary<string, object>?)data);
             }
 
             if (healthyCount > 0)
             {
                 _logger.LogWarning("Some external services are unhealthy ({HealthyCount}/{TotalCount})", healthyCount, totalCount);
-                return HealthCheckResult.Degraded($"Some external services are unhealthy ({healthyCount}/{totalCount})", null, data);
+                return HealthCheckResult.Degraded($"Some external services are unhealthy ({healthyCount}/{totalCount})", null, (IReadOnlyDictionary<string, object>?)data);
             }
 
             _logger.LogError("All external services are unhealthy ({HealthyCount}/{TotalCount})", healthyCount, totalCount);
-            return HealthCheckResult.Unhealthy($"All external services are unhealthy ({healthyCount}/{totalCount})", null, data);
+            return HealthCheckResult.Unhealthy($"All external services are unhealthy ({healthyCount}/{totalCount})", null, (IReadOnlyDictionary<string, object>?)data);
         }
 
         private async Task<(string Service, bool IsHealthy, string Message)> CheckServiceHealth(string serviceName, string baseUrl, CancellationToken cancellationToken)
@@ -258,15 +259,15 @@ namespace Npc.Api.Infrastructure.HealthChecks
 
             if (healthyCount == totalCount)
             {
-                return HealthCheckResult.Healthy($"All database operations are healthy ({healthyCount}/{totalCount})", data);
+                return HealthCheckResult.Healthy($"All database operations are healthy ({healthyCount}/{totalCount})", (IReadOnlyDictionary<string, object>?)data);
             }
 
             if (healthyCount > 0)
             {
-                return HealthCheckResult.Degraded($"Some database operations are unhealthy ({healthyCount}/{totalCount})", null, data);
+                return HealthCheckResult.Degraded($"Some database operations are unhealthy ({healthyCount}/{totalCount})", null, (IReadOnlyDictionary<string, object>?)data);
             }
 
-            return HealthCheckResult.Unhealthy($"All database operations are unhealthy ({healthyCount}/{totalCount})", null, data);
+            return HealthCheckResult.Unhealthy($"All database operations are unhealthy ({healthyCount}/{totalCount})", null, (IReadOnlyDictionary<string, object>?)data);
         }
     }
 }

@@ -1,4 +1,3 @@
-using AutoMapper;
 using Npc.Api.Entities;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Cache;
@@ -68,8 +67,8 @@ namespace Npc.Api.Application.Queries
             var cacheKey = $"characters:paged:{query.Page}:{query.PageSize}";
 
             // Try to get from cache first
-            var cached = await _cache.GetAsync<(IEnumerable<Character> Items, int TotalCount)>(cacheKey, ct);
-            if (cached.Items is not null)
+            var cached = await _cache.GetAsync<PagedResult<Character>>(cacheKey, ct);
+            if (cached is not null)
             {
                 _logger.LogDebug("Paged characters (page {Page}, size {PageSize}) found in cache", query.Page, query.PageSize);
                 return cached;
@@ -79,7 +78,8 @@ namespace Npc.Api.Application.Queries
             var result = await _repository.GetPagedAsync(query.Page, query.PageSize, ct);
 
             // Cache for 5 minutes (shorter for lists that change frequently)
-            await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5), ct);
+            var pagedResult = new PagedResult<Character>(result.Items, result.TotalCount);
+            await _cache.SetAsync(cacheKey, pagedResult, TimeSpan.FromMinutes(5), ct);
             _logger.LogDebug("Paged characters (page {Page}, size {PageSize}) cached for 5 minutes", query.Page, query.PageSize);
 
             return result;
@@ -143,22 +143,22 @@ namespace Npc.Api.Application.Queries
 
         public async Task<IEnumerable<Character>> HandleAsync(SearchCharactersByNameQuery query, CancellationToken ct = default)
         {
-            var cacheKey = CacheKeys.CharactersSearch(query.Name, 1, 100); // Default pagination for search
+            var cacheKey = CacheKeys.CharactersSearch(query.NamePattern, 1, 100); // Default pagination for search
 
             // Try to get from cache first
             var cached = await _cache.GetAsync<IEnumerable<Character>>(cacheKey, ct);
             if (cached is not null)
             {
-                _logger.LogDebug("Character search for '{Name}' found in cache", query.Name);
+                _logger.LogDebug("Character search for '{NamePattern}' found in cache", query.NamePattern);
                 return cached;
             }
 
             // Not in cache, get from repository
-            var characters = await _repository.SearchByNameAsync(query.Name, ct);
+            var characters = await _repository.SearchByNameAsync(query.NamePattern, ct);
 
             // Cache for 10 minutes
             await _cache.SetAsync(cacheKey, characters, TimeSpan.FromMinutes(10), ct);
-            _logger.LogDebug("Character search for '{Name}' cached for 10 minutes", query.Name);
+            _logger.LogDebug("Character search for '{NamePattern}' cached for 10 minutes", query.NamePattern);
 
             return characters;
         }
