@@ -147,7 +147,7 @@ builder.Services.AddHealthChecksUI(options =>
 // Swagger Configuration
 builder.Services.AddSwaggerGen(c =>
 {
-    var xml = Path.Combine(AppContext.BaseDirectory, "Npc.Api.xml");
+    var xml = System.IO.Path.Combine(AppContext.BaseDirectory, "Npc.Api.xml");
     if (File.Exists(xml))
         c.IncludeXmlComments(xml, includeControllerXmlComments: true);
 
@@ -368,6 +368,29 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 // Localization services
 builder.Services.AddScoped<ILocalizationService, LocalizationService>();
 
+// GraphQL Configuration
+builder.Services
+    .AddDbContextFactory<CharacterDbContext>(options =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")))
+    .AddGraphQLServer()
+    .AddQueryType<Npc.Api.GraphQL.Queries.Query>()
+    .AddMutationType<Npc.Api.GraphQL.Mutations.Mutation>()
+    .AddSubscriptionType<Npc.Api.GraphQL.Subscriptions.Subscription>()
+    .AddType<Npc.Api.GraphQL.Types.CharacterType>()
+    .AddType<Npc.Api.GraphQL.Types.WorldType>()
+    .AddType<Npc.Api.GraphQL.Types.LoreType>()
+    .AddType<Npc.Api.GraphQL.Types.ConversationType>()
+    .AddType<Npc.Api.GraphQL.Types.UtteranceType>()
+    .AddProjections()
+    .AddFiltering()
+    .AddSorting()
+    .AddDataLoader<Npc.Api.GraphQL.DataLoaders.CharacterByIdDataLoader>()
+    .AddDataLoader<Npc.Api.GraphQL.DataLoaders.CharactersByWorldDataLoader>()
+    .AddDataLoader<Npc.Api.GraphQL.DataLoaders.WorldByIdDataLoader>()
+    .AddDataLoader<Npc.Api.GraphQL.DataLoaders.LoreByIdDataLoader>()
+    .AddDataLoader<Npc.Api.GraphQL.DataLoaders.LoreByWorldDataLoader>()
+    .AddRedisSubscriptions(_ => StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
+
 var app = builder.Build();
 
 app.UseCors("Default");
@@ -384,6 +407,10 @@ app.UseRateLimiter();
 app.UseExceptionHandler();
 
 app.UseApiKeyAuth();
+
+// GraphQL endpoint
+app.MapGraphQL("/graphql").RequireRateLimiting("global");
+
 app.MapControllers().RequireRateLimiting("global");
 
 using (var scope = app.Services.CreateAsyncScope())
