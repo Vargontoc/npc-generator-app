@@ -1,3 +1,4 @@
+using AutoMapper;
 using Npc.Api.Entities;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
@@ -8,8 +9,8 @@ using Npc.Api.Domain.Events;
 namespace Npc.Api.Application.Commands
 {
     // Command DTOs
-    public record CreateLoreCommand(string Title, string? Text, Guid? WorldId) : ICommand<Lore>;
-    public record UpdateLoreCommand(Guid Id, string Title, string? Text, Guid? WorldId) : ICommand<Lore>;
+    public record CreateLoreCommand(LoreRequest Request) : ICommand<Lore>;
+    public record UpdateLoreCommand(Guid Id, LoreRequest Request) : ICommand<Lore>;
     public record DeleteLoreCommand(Guid Id) : ICommand;
     public record SuggestLoreCommand(Guid? WorldId, string Prompt, int Count, bool DryRun) : ICommand<LoreSuggestResponse>;
 
@@ -20,31 +21,29 @@ namespace Npc.Api.Application.Commands
         private readonly IWorldRepository _worldRepository;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
-        public CreateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
+        public CreateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher, IMapper mapper)
         {
             _repository = repository;
             _worldRepository = worldRepository;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<Lore> HandleAsync(CreateLoreCommand command, CancellationToken ct = default)
         {
             // Business logic: Validate world exists if provided
-            if (command.WorldId is not null)
+            if (command.Request.WorldId is not null)
             {
-                var worldExists = await _worldRepository.ExistsAsync(command.WorldId.Value, ct);
+                var worldExists = await _worldRepository.ExistsAsync(command.Request.WorldId.Value, ct);
                 if (!worldExists)
-                    throw new InvalidOperationException($"World with ID {command.WorldId} not found");
+                    throw new InvalidOperationException($"World with ID {command.Request.WorldId} not found");
             }
 
-            var lore = new Lore
-            {
-                Title = command.Title,
-                Text = command.Text,
-                WorldId = command.WorldId
-            };
+            // Use AutoMapper to convert DTO to Entity
+            var lore = _mapper.Map<Lore>(command.Request);
 
             var createdLore = await _repository.AddAsync(lore, ct);
 
@@ -64,13 +63,15 @@ namespace Npc.Api.Application.Commands
         private readonly IWorldRepository _worldRepository;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
-        public UpdateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
+        public UpdateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher, IMapper mapper)
         {
             _repository = repository;
             _worldRepository = worldRepository;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<Lore> HandleAsync(UpdateLoreCommand command, CancellationToken ct = default)
@@ -80,20 +81,18 @@ namespace Npc.Api.Application.Commands
                 throw new InvalidOperationException($"Lore with ID {command.Id} not found");
 
             // Business logic: Validate world exists if provided
-            if (command.WorldId is not null)
+            if (command.Request.WorldId is not null)
             {
-                var worldExists = await _worldRepository.ExistsAsync(command.WorldId.Value, ct);
+                var worldExists = await _worldRepository.ExistsAsync(command.Request.WorldId.Value, ct);
                 if (!worldExists)
-                    throw new InvalidOperationException($"World with ID {command.WorldId} not found");
+                    throw new InvalidOperationException($"World with ID {command.Request.WorldId} not found");
             }
 
             // Capture old values for audit
             var oldLore = new { existingLore.Title, existingLore.Text, existingLore.WorldId };
 
-            // Update properties
-            existingLore.Title = command.Title;
-            existingLore.Text = command.Text;
-            existingLore.WorldId = command.WorldId;
+            // Use AutoMapper to update entity from DTO
+            _mapper.Map(command.Request, existingLore);
 
             var updatedLore = await _repository.UpdateAsync(existingLore, ct);
 

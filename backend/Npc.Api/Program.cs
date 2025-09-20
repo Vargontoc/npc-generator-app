@@ -122,6 +122,9 @@ builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent
 builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection("Tts"));
 builder.Services.Configure<ImageGenOptions>(builder.Configuration.GetSection("ImageGenerator"));
 
+// AutoMapper Configuration
+builder.Services.AddAutoMapper(typeof(Program));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();

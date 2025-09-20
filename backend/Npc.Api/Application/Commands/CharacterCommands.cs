@@ -1,3 +1,4 @@
+using AutoMapper;
 using Npc.Api.Entities;
 using Npc.Api.Dtos;
 using Npc.Api.Repositories;
@@ -8,8 +9,8 @@ using Npc.Api.Domain.Events;
 namespace Npc.Api.Application.Commands
 {
     // Command DTOs
-    public record CreateCharacterCommand(string Name, int Age, string? Description, string? AvatarUrl) : ICommand<Character>;
-    public record UpdateCharacterCommand(Guid Id, string Name, int Age, string? Description, string? AvatarUrl) : ICommand<Character>;
+    public record CreateCharacterCommand(CharacterRequest Request) : ICommand<Character>;
+    public record UpdateCharacterCommand(Guid Id, CharacterRequest Request) : ICommand<Character>;
     public record DeleteCharacterCommand(Guid Id) : ICommand;
 
     // Command Handlers
@@ -19,31 +20,29 @@ namespace Npc.Api.Application.Commands
         private readonly IModerationService _moderationService;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
         public CreateCharacterCommandHandler(
             ICharacterRepository repository,
             IModerationService moderationService,
             IAuditService auditService,
-            IDomainEventDispatcher eventDispatcher)
+            IDomainEventDispatcher eventDispatcher,
+            IMapper mapper)
         {
             _repository = repository;
             _moderationService = moderationService;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<Character> HandleAsync(CreateCharacterCommand command, CancellationToken ct = default)
         {
             // Business logic: Moderation check
-            var advisory = await _moderationService.AnalyzeAsync(command.Age, command.Description, ct);
+            var advisory = await _moderationService.AnalyzeAsync(command.Request.Age, command.Request.Description, ct);
 
-            var character = new Character
-            {
-                Name = command.Name,
-                Age = command.Age,
-                Description = command.Description,
-                AvatarUrl = command.AvatarUrl
-            };
+            // Use AutoMapper to convert DTO to Entity
+            var character = _mapper.Map<Character>(command.Request);
 
             var createdCharacter = await _repository.AddAsync(character, ct);
 
@@ -66,17 +65,20 @@ namespace Npc.Api.Application.Commands
         private readonly IModerationService _moderationService;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
         public UpdateCharacterCommandHandler(
             ICharacterRepository repository,
             IModerationService moderationService,
             IAuditService auditService,
-            IDomainEventDispatcher eventDispatcher)
+            IDomainEventDispatcher eventDispatcher,
+            IMapper mapper)
         {
             _repository = repository;
             _moderationService = moderationService;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<Character> HandleAsync(UpdateCharacterCommand command, CancellationToken ct = default)
@@ -86,16 +88,13 @@ namespace Npc.Api.Application.Commands
                 throw new InvalidOperationException($"Character with ID {command.Id} not found");
 
             // Business logic: Moderation check
-            var advisory = await _moderationService.AnalyzeAsync(command.Age, command.Description, ct);
+            var advisory = await _moderationService.AnalyzeAsync(command.Request.Age, command.Request.Description, ct);
 
             // Capture old values for audit
             var oldCharacter = new { existingCharacter.Name, existingCharacter.Age, existingCharacter.Description, existingCharacter.AvatarUrl };
 
-            // Update properties
-            existingCharacter.Name = command.Name;
-            existingCharacter.Age = command.Age;
-            existingCharacter.Description = command.Description;
-            existingCharacter.AvatarUrl = command.AvatarUrl;
+            // Use AutoMapper to update entity from DTO
+            _mapper.Map(command.Request, existingCharacter);
 
             var updatedCharacter = await _repository.UpdateAsync(existingCharacter, ct);
 

@@ -1,4 +1,6 @@
+using AutoMapper;
 using Npc.Api.Entities;
+using Npc.Api.Dtos;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
 using Npc.Api.Domain.Events;
@@ -6,8 +8,8 @@ using Npc.Api.Domain.Events;
 namespace Npc.Api.Application.Commands
 {
     // Command DTOs
-    public record CreateWorldCommand(string Name, string? Description) : ICommand<World>;
-    public record UpdateWorldCommand(Guid Id, string Name, string? Description) : ICommand<World>;
+    public record CreateWorldCommand(WorldRequest Request) : ICommand<World>;
+    public record UpdateWorldCommand(Guid Id, WorldRequest Request) : ICommand<World>;
     public record DeleteWorldCommand(Guid Id) : ICommand;
 
     // Command Handlers
@@ -16,21 +18,20 @@ namespace Npc.Api.Application.Commands
         private readonly IWorldRepository _repository;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
-        public CreateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
+        public CreateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher, IMapper mapper)
         {
             _repository = repository;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<World> HandleAsync(CreateWorldCommand command, CancellationToken ct = default)
         {
-            var world = new World
-            {
-                Name = command.Name,
-                Description = command.Description
-            };
+            // Use AutoMapper to convert DTO to Entity
+            var world = _mapper.Map<World>(command.Request);
 
             var createdWorld = await _repository.AddAsync(world, ct);
 
@@ -49,12 +50,14 @@ namespace Npc.Api.Application.Commands
         private readonly IWorldRepository _repository;
         private readonly IAuditService _auditService;
         private readonly IDomainEventDispatcher _eventDispatcher;
+        private readonly IMapper _mapper;
 
-        public UpdateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
+        public UpdateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher, IMapper mapper)
         {
             _repository = repository;
             _auditService = auditService;
             _eventDispatcher = eventDispatcher;
+            _mapper = mapper;
         }
 
         public async Task<World> HandleAsync(UpdateWorldCommand command, CancellationToken ct = default)
@@ -66,9 +69,8 @@ namespace Npc.Api.Application.Commands
             // Capture old values for audit
             var oldWorld = new { existingWorld.Name, existingWorld.Description };
 
-            // Update properties
-            existingWorld.Name = command.Name;
-            existingWorld.Description = command.Description;
+            // Use AutoMapper to update entity from DTO
+            _mapper.Map(command.Request, existingWorld);
 
             var updatedWorld = await _repository.UpdateAsync(existingWorld, ct);
 

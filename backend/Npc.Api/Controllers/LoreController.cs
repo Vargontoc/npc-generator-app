@@ -1,3 +1,4 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npc.Api.Data;
@@ -12,7 +13,7 @@ namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("lores")]
-    public class LoreController(IMediator mediator) : ControllerBase
+    public class LoreController(IMediator mediator, IMapper mapper) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<LoreResponse>>> List([FromQuery] Guid? worldId, CancellationToken ct)
@@ -20,7 +21,7 @@ namespace Npc.Api.Controllers
             var query = new GetLoreByWorldIdQuery(worldId);
             var lores = await mediator.SendAsync(query, ct);
 
-            var list = lores.Select(l => new LoreResponse(l.Id, l.Title, l.Text, l.WorldId, l.CreatedAt, l.UpdatedAt));
+            var list = mapper.Map<IEnumerable<LoreResponse>>(lores);
             return Ok(list);
         }
 
@@ -31,7 +32,8 @@ namespace Npc.Api.Controllers
             var query = new GetLoreByIdQuery(id);
             var l = await mediator.SendAsync(query, ct);
             if (l is null) return NotFound();
-            return Ok(new LoreResponse(l.Id, l.Title, l.Text, l.WorldId, l.CreatedAt, l.UpdatedAt));
+            var response = mapper.Map<LoreResponse>(l);
+            return Ok(response);
         }
 
         // POST /lore
@@ -40,10 +42,10 @@ namespace Npc.Api.Controllers
         {
             try
             {
-                var command = new CreateLoreCommand(req.Title, req.Text, req.WorldId);
+                var command = new CreateLoreCommand(req);
                 var entity = await mediator.SendAsync(command, ct);
-                return CreatedAtAction(nameof(Get), new { id = entity.Id },
-                    new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
+                var response = mapper.Map<LoreResponse>(entity);
+                return CreatedAtAction(nameof(Get), new { id = entity.Id }, response);
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("World"))
             {
@@ -57,9 +59,10 @@ namespace Npc.Api.Controllers
         {
             try
             {
-                var command = new UpdateLoreCommand(id, req.Title, req.Text, req.WorldId);
+                var command = new UpdateLoreCommand(id, req);
                 var entity = await mediator.SendAsync(command, ct);
-                return Ok(new LoreResponse(entity.Id, entity.Title, entity.Text, entity.WorldId, entity.CreatedAt, entity.UpdatedAt));
+                var response = mapper.Map<LoreResponse>(entity);
+                return Ok(response);
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("Lore"))
             {

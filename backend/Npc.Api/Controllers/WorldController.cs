@@ -1,3 +1,4 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -12,7 +13,7 @@ namespace Npc.Api.Controllers
 {
     [ApiController]
     [Route("worlds")]
-    public class WorldController(IMediator mediator) : ControllerBase
+    public class WorldController(IMediator mediator, IMapper mapper) : ControllerBase
     {
         [HttpGet]
         public async Task<ActionResult<IEnumerable<WorldResponse>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
@@ -20,7 +21,7 @@ namespace Npc.Api.Controllers
             var query = new GetWorldsPagedQuery(page, pageSize);
             var (items, totalCount) = await mediator.SendAsync(query, ct);
 
-            var list = items.Select(w => new WorldResponse(w.Id, w.Name, w.Description, w.CreatedAt, w.UpdatedAt));
+            var list = mapper.Map<IEnumerable<WorldResponse>>(items);
             Response.Headers.Append("X-Total-Count", totalCount.ToString());
 
             return Ok(list);
@@ -32,17 +33,18 @@ namespace Npc.Api.Controllers
             var query = new GetWorldByIdQuery(id);
             var entity = await mediator.SendAsync(query, ct);
             if (entity is null) return NotFound();
-            return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
+            var response = mapper.Map<WorldResponse>(entity);
+            return Ok(response);
         }
 
         [HttpPost]
         public async Task<ActionResult<WorldResponse>> CreateWorld([FromBody] WorldRequest request, CancellationToken ct = default)
         {
-            var command = new CreateWorldCommand(request.Name, request.Description);
+            var command = new CreateWorldCommand(request);
             var entity = await mediator.SendAsync(command, ct);
+            var response = mapper.Map<WorldResponse>(entity);
 
-            return CreatedAtAction(nameof(GetWorld), new { id = entity.Id },
-             new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
+            return CreatedAtAction(nameof(GetWorld), new { id = entity.Id }, response);
         }
 
         [HttpPut("{id:guid}")]
@@ -50,9 +52,10 @@ namespace Npc.Api.Controllers
         {
             try
             {
-                var command = new UpdateWorldCommand(id, request.Name, request.Description);
+                var command = new UpdateWorldCommand(id, request);
                 var entity = await mediator.SendAsync(command, ct);
-                return Ok(new WorldResponse(entity.Id, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt));
+                var response = mapper.Map<WorldResponse>(entity);
+                return Ok(response);
             }
             catch (InvalidOperationException)
             {
