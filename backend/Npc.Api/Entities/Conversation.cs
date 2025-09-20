@@ -2,26 +2,23 @@ using Npc.Api.Extensions;
 
 namespace Npc.Api.Entities
 {
-    public class Lore : BaseEntity, ILocalizable
+    public class Conversation : BaseEntity, ILocalizable
     {
         public required string Title { get; set; }
-        public string? Text { get; set; }
         public Guid? WorldId { get; set; }
         public World? World { get; set; }
-        public bool IsGenerated { get; set; }
-        public string? GenerationSource { get; set; }           // e.g. "agent"
-        public string? GenerationMeta { get; set; }             // json (model, prompt hash, etc.)
-        public DateTimeOffset? GeneratedAt { get; set; }
+
+        // Navigation properties
+        public ICollection<Utterance> Utterances { get; set; } = new List<Utterance>();
 
         // Localization implementation
-        public string GetEntityType() => "Lore";
+        public string GetEntityType() => "Conversation";
 
         public Dictionary<string, string> GetLocalizableProperties()
         {
             return new Dictionary<string, string>
             {
-                { "Title", Title },
-                { "Text", Text ?? string.Empty }
+                { "Title", Title }
             };
         }
 
@@ -29,9 +26,6 @@ namespace Npc.Api.Entities
         {
             if (localizations.TryGetValue("Title", out var localizedTitle))
                 Title = localizedTitle;
-
-            if (localizations.TryGetValue("Text", out var localizedText))
-                Text = localizedText;
         }
     }
 }

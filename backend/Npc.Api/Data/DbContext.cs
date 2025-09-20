@@ -10,6 +10,10 @@ public class CharacterDbContext : DbContext
     public DbSet<Character> Characters { get; set; }
     public DbSet<World> Worlds { get; set; }
     public DbSet<Lore> LoreEntries { get; set; }
+    public DbSet<Language> Languages { get; set; }
+    public DbSet<LocalizedContent> LocalizedContents { get; set; }
+    public DbSet<Conversation> Conversations { get; set; }
+    public DbSet<Utterance> Utterances { get; set; }
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -47,6 +51,59 @@ public class CharacterDbContext : DbContext
         lore.Property(l => l.CreatedAt).IsRequired();
         lore.Property(l => l.UpdatedAt).IsRequired();
         lore.HasOne(l => l.World).WithMany(w => w.LoreEntries).HasForeignKey(l => l.WorldId).OnDelete(DeleteBehavior.SetNull);
+
+        // Language
+        var language = modelBuilder.Entity<Language>();
+        language.ToTable("languages");
+        language.HasKey(l => l.Id);
+        language.Property(l => l.Code).IsRequired().HasMaxLength(10);
+        language.Property(l => l.Name).IsRequired().HasMaxLength(100);
+        language.Property(l => l.NativeName).IsRequired().HasMaxLength(100);
+        language.Property(l => l.CultureInfo).HasMaxLength(20);
+        language.Property(l => l.CreatedAt).IsRequired();
+        language.Property(l => l.UpdatedAt).IsRequired();
+        language.HasIndex(l => l.Code).IsUnique();
+
+        // LocalizedContent
+        var localizedContent = modelBuilder.Entity<LocalizedContent>();
+        localizedContent.ToTable("localized_contents");
+        localizedContent.HasKey(lc => lc.Id);
+        localizedContent.Property(lc => lc.EntityType).IsRequired().HasMaxLength(50);
+        localizedContent.Property(lc => lc.EntityId).IsRequired();
+        localizedContent.Property(lc => lc.PropertyName).IsRequired().HasMaxLength(100);
+        localizedContent.Property(lc => lc.LanguageCode).IsRequired().HasMaxLength(10);
+        localizedContent.Property(lc => lc.Content).IsRequired();
+        localizedContent.Property(lc => lc.Notes).HasMaxLength(500);
+        localizedContent.Property(lc => lc.TranslatedBy).HasMaxLength(100);
+        localizedContent.Property(lc => lc.CreatedAt).IsRequired();
+        localizedContent.Property(lc => lc.UpdatedAt).IsRequired();
+        localizedContent.HasIndex(lc => new { lc.EntityType, lc.EntityId, lc.PropertyName, lc.LanguageCode }).IsUnique();
+
+        // Conversation
+        var conversation = modelBuilder.Entity<Conversation>();
+        conversation.ToTable("conversations");
+        conversation.HasKey(c => c.Id);
+        conversation.Property(c => c.Title).IsRequired().HasMaxLength(200);
+        conversation.Property(c => c.CreatedAt).IsRequired();
+        conversation.Property(c => c.UpdatedAt).IsRequired();
+        conversation.HasOne(c => c.World).WithMany().HasForeignKey(c => c.WorldId).OnDelete(DeleteBehavior.SetNull);
+
+        // Utterance
+        var utterance = modelBuilder.Entity<Utterance>();
+        utterance.ToTable("utterances");
+        utterance.HasKey(u => u.Id);
+        utterance.Property(u => u.Text).IsRequired();
+        utterance.Property(u => u.ConversationId).IsRequired();
+        utterance.Property(u => u.Version).IsRequired();
+        utterance.Property(u => u.Deleted).IsRequired();
+        utterance.Property(u => u.Tags).HasConversion(
+            v => string.Join(',', v),
+            v => v.Split(',', StringSplitOptions.RemoveEmptyEntries)
+        );
+        utterance.Property(u => u.CreatedAt).IsRequired();
+        utterance.Property(u => u.UpdatedAt).IsRequired();
+        utterance.HasOne(u => u.Conversation).WithMany(c => c.Utterances).HasForeignKey(u => u.ConversationId).OnDelete(DeleteBehavior.Cascade);
+        utterance.HasOne(u => u.Character).WithMany().HasForeignKey(u => u.CharacterId).OnDelete(DeleteBehavior.SetNull);
     }
 
 

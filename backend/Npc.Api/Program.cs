@@ -34,6 +34,7 @@ using Npc.Api.Application.Commands;
 using Npc.Api.Entities;
 using Npc.Api.Application.Queries;
 using Npc.Api.Dtos;
+using Npc.Api.Infrastructure.Seeding;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -364,9 +365,15 @@ builder.Services.AddScoped<ITtsService, TtsService>();
 builder.Services.AddScoped<IImageGenService, ImageGenService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 
+// Localization services
+builder.Services.AddScoped<ILocalizationService, LocalizationService>();
+
 var app = builder.Build();
 
 app.UseCors("Default");
+
+// Localization middleware (early in pipeline)
+app.UseLocalization();
 
 // Correlation ID middleware (must be early in pipeline)
 app.UseCorrelationId();
@@ -383,6 +390,9 @@ using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CharacterDbContext>();
     db.Database.Migrate();
+
+    // Seed languages
+    await LanguageSeeder.SeedLanguagesAsync(db);
 
     var driver = app.Services.GetRequiredService<IDriver>();
     await Neo4jBootstrap.EnsureAsync(driver, CancellationToken.None);
