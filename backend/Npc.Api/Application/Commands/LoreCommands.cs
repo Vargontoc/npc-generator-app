@@ -3,6 +3,7 @@ using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
 using Npc.Api.Services;
 using Npc.Api.Dtos;
+using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands
 {
@@ -18,12 +19,14 @@ namespace Npc.Api.Application.Commands
         private readonly ILoreRepository _repository;
         private readonly IWorldRepository _worldRepository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public CreateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService)
+        public CreateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _worldRepository = worldRepository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Lore> HandleAsync(CreateLoreCommand command, CancellationToken ct = default)
@@ -48,6 +51,9 @@ namespace Npc.Api.Application.Commands
             // Audit trail
             await _auditService.LogLoreChangeAsync("CREATE", createdLore.Id, null, createdLore, "api-user", ct);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new LoreCreatedEvent(createdLore), ct);
+
             return createdLore;
         }
     }
@@ -57,12 +63,14 @@ namespace Npc.Api.Application.Commands
         private readonly ILoreRepository _repository;
         private readonly IWorldRepository _worldRepository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public UpdateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService)
+        public UpdateLoreCommandHandler(ILoreRepository repository, IWorldRepository worldRepository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _worldRepository = worldRepository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Lore> HandleAsync(UpdateLoreCommand command, CancellationToken ct = default)
@@ -92,6 +100,9 @@ namespace Npc.Api.Application.Commands
             // Audit trail
             await _auditService.LogLoreChangeAsync("UPDATE", updatedLore.Id, oldLore, updatedLore, "api-user", ct);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new LoreUpdatedEvent(updatedLore, oldLore), ct);
+
             return updatedLore;
         }
     }
@@ -100,11 +111,13 @@ namespace Npc.Api.Application.Commands
     {
         private readonly ILoreRepository _repository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public DeleteLoreCommandHandler(ILoreRepository repository, IAuditService auditService)
+        public DeleteLoreCommandHandler(ILoreRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Unit> HandleAsync(DeleteLoreCommand command, CancellationToken ct = default)
@@ -120,6 +133,9 @@ namespace Npc.Api.Application.Commands
 
             // Audit trail
             await _auditService.LogLoreChangeAsync("DELETE", command.Id, deletedLore, null, "api-user", ct);
+
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new LoreDeletedEvent(command.Id, deletedLore), ct);
 
             return Unit.Value;
         }

@@ -182,6 +182,232 @@ namespace Npc.Api.Domain.Events.Handlers
         }
     }
 
+    public class WorldUpdatedEventHandler : IDomainEventHandler<WorldUpdatedEvent>
+    {
+        private readonly IDriver _neo4jDriver;
+        private readonly ILogger<WorldUpdatedEventHandler> _logger;
+
+        public WorldUpdatedEventHandler(IDriver neo4jDriver, ILogger<WorldUpdatedEventHandler> logger)
+        {
+            _neo4jDriver = neo4jDriver;
+            _logger = logger;
+        }
+
+        public async Task HandleAsync(WorldUpdatedEvent domainEvent, CancellationToken ct = default)
+        {
+            try
+            {
+                const string cypher = """
+                    MATCH (w:World {id: $id})
+                    SET w.name = $name,
+                        w.description = $description,
+                        w.updatedAt = datetime($updatedAt),
+                        w.syncedAt = datetime()
+                    """;
+
+                var world = domainEvent.World;
+                await using var session = _neo4jDriver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
+                {
+                    id = world.Id.ToString(),
+                    name = world.Name,
+                    description = world.Description ?? "",
+                    updatedAt = world.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                }));
+
+                _logger.LogDebug("Synced world update to Neo4j: {WorldId}", world.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync world update to Neo4j: {WorldId}", domainEvent.World.Id);
+                throw;
+            }
+        }
+    }
+
+    public class WorldDeletedEventHandler : IDomainEventHandler<WorldDeletedEvent>
+    {
+        private readonly IDriver _neo4jDriver;
+        private readonly ILogger<WorldDeletedEventHandler> _logger;
+
+        public WorldDeletedEventHandler(IDriver neo4jDriver, ILogger<WorldDeletedEventHandler> logger)
+        {
+            _neo4jDriver = neo4jDriver;
+            _logger = logger;
+        }
+
+        public async Task HandleAsync(WorldDeletedEvent domainEvent, CancellationToken ct = default)
+        {
+            try
+            {
+                const string cypher = """
+                    MATCH (w:World {id: $id})
+                    OPTIONAL MATCH (w)-[r]-()
+                    DELETE r, w
+                    """;
+
+                await using var session = _neo4jDriver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
+                {
+                    id = domainEvent.WorldId.ToString()
+                }));
+
+                _logger.LogDebug("Synced world deletion to Neo4j: {WorldId}", domainEvent.WorldId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync world deletion to Neo4j: {WorldId}", domainEvent.WorldId);
+                throw;
+            }
+        }
+    }
+
+    // Lore sync handlers - PostgreSQL to Neo4j
+    public class LoreCreatedEventHandler : IDomainEventHandler<LoreCreatedEvent>
+    {
+        private readonly IDriver _neo4jDriver;
+        private readonly ILogger<LoreCreatedEventHandler> _logger;
+
+        public LoreCreatedEventHandler(IDriver neo4jDriver, ILogger<LoreCreatedEventHandler> logger)
+        {
+            _neo4jDriver = neo4jDriver;
+            _logger = logger;
+        }
+
+        public async Task HandleAsync(LoreCreatedEvent domainEvent, CancellationToken ct = default)
+        {
+            try
+            {
+                const string cypher = """
+                    MERGE (l:Lore {id: $id})
+                    SET l.title = $title,
+                        l.text = $text,
+                        l.isGenerated = $isGenerated,
+                        l.generationSource = $generationSource,
+                        l.createdAt = datetime($createdAt),
+                        l.updatedAt = datetime($updatedAt),
+                        l.syncedAt = datetime()
+                    WITH l
+                    OPTIONAL MATCH (w:World {id: $worldId})
+                    FOREACH (world IN CASE WHEN w IS NOT NULL THEN [w] ELSE [] END |
+                        MERGE (l)-[:BELONGS_TO]->(world)
+                    )
+                    """;
+
+                var lore = domainEvent.Lore;
+                await using var session = _neo4jDriver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
+                {
+                    id = lore.Id.ToString(),
+                    title = lore.Title,
+                    text = lore.Text ?? "",
+                    isGenerated = lore.IsGenerated,
+                    generationSource = lore.GenerationSource ?? "",
+                    worldId = lore.WorldId?.ToString(),
+                    createdAt = lore.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                    updatedAt = lore.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                }));
+
+                _logger.LogDebug("Synced lore creation to Neo4j: {LoreId}", lore.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync lore creation to Neo4j: {LoreId}", domainEvent.Lore.Id);
+                throw;
+            }
+        }
+    }
+
+    public class LoreUpdatedEventHandler : IDomainEventHandler<LoreUpdatedEvent>
+    {
+        private readonly IDriver _neo4jDriver;
+        private readonly ILogger<LoreUpdatedEventHandler> _logger;
+
+        public LoreUpdatedEventHandler(IDriver neo4jDriver, ILogger<LoreUpdatedEventHandler> logger)
+        {
+            _neo4jDriver = neo4jDriver;
+            _logger = logger;
+        }
+
+        public async Task HandleAsync(LoreUpdatedEvent domainEvent, CancellationToken ct = default)
+        {
+            try
+            {
+                const string cypher = """
+                    MATCH (l:Lore {id: $id})
+                    SET l.title = $title,
+                        l.text = $text,
+                        l.updatedAt = datetime($updatedAt),
+                        l.syncedAt = datetime()
+                    WITH l
+                    // Remove old world relationship
+                    OPTIONAL MATCH (l)-[oldRel:BELONGS_TO]->()
+                    DELETE oldRel
+                    WITH l
+                    // Add new world relationship if worldId provided
+                    OPTIONAL MATCH (w:World {id: $worldId})
+                    FOREACH (world IN CASE WHEN w IS NOT NULL THEN [w] ELSE [] END |
+                        MERGE (l)-[:BELONGS_TO]->(world)
+                    )
+                    """;
+
+                var lore = domainEvent.Lore;
+                await using var session = _neo4jDriver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
+                {
+                    id = lore.Id.ToString(),
+                    title = lore.Title,
+                    text = lore.Text ?? "",
+                    worldId = lore.WorldId?.ToString(),
+                    updatedAt = lore.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                }));
+
+                _logger.LogDebug("Synced lore update to Neo4j: {LoreId}", lore.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync lore update to Neo4j: {LoreId}", domainEvent.Lore.Id);
+                throw;
+            }
+        }
+    }
+
+    public class LoreDeletedEventHandler : IDomainEventHandler<LoreDeletedEvent>
+    {
+        private readonly IDriver _neo4jDriver;
+        private readonly ILogger<LoreDeletedEventHandler> _logger;
+
+        public LoreDeletedEventHandler(IDriver neo4jDriver, ILogger<LoreDeletedEventHandler> logger)
+        {
+            _neo4jDriver = neo4jDriver;
+            _logger = logger;
+        }
+
+        public async Task HandleAsync(LoreDeletedEvent domainEvent, CancellationToken ct = default)
+        {
+            try
+            {
+                const string cypher = """
+                    MATCH (l:Lore {id: $id})
+                    DETACH DELETE l
+                    """;
+
+                await using var session = _neo4jDriver.AsyncSession(o => o.WithDefaultAccessMode(AccessMode.Write));
+                await session.ExecuteWriteAsync(tx => tx.RunAsync(cypher, new
+                {
+                    id = domainEvent.LoreId.ToString()
+                }));
+
+                _logger.LogDebug("Synced lore deletion to Neo4j: {LoreId}", domainEvent.LoreId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync lore deletion to Neo4j: {LoreId}", domainEvent.LoreId);
+                throw;
+            }
+        }
+    }
+
     // Conversation sync handlers - Neo4j to PostgreSQL metadata
     public class ConversationCreatedEventHandler : IDomainEventHandler<ConversationCreatedEvent>
     {

@@ -155,12 +155,21 @@ builder.Services.AddScoped<Application.Mediator.IMediator, Application.Mediator.
 // Domain Events
 builder.Services.AddScoped<Domain.Events.IDomainEventDispatcher, Domain.Events.DomainEventDispatcher>();
 
-// Domain Event Handlers
+// Domain Event Handlers - Database Sync
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CharacterCreatedEventHandler>();
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterUpdatedEvent>, Domain.Events.Handlers.CharacterUpdatedEventHandler>();
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterDeletedEvent>, Domain.Events.Handlers.CharacterDeletedEventHandler>();
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.WorldCreatedEventHandler>();
-builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.ConversationCreatedEvent>, Domain.Events.Handlers.ConversationCreatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldUpdatedEvent>, Domain.Events.Handlers.WorldUpdatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldDeletedEvent>, Domain.Events.Handlers.WorldDeletedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreCreatedEvent>, Domain.Events.Handlers.LoreCreatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreUpdatedEvent>, Domain.Events.Handlers.LoreUpdatedEventHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreDeletedEvent>, Domain.Events.Handlers.LoreDeletedEventHandler>();
+
+// Domain Event Handlers - Conversation Sync
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.ConversationCreatedEvent>, Domain.Events.Handlers.ConversationMetadataHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.UtteranceCreatedEvent>, Domain.Events.Handlers.UtteranceMetadataHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.UtteranceCreatedEvent>, Domain.Events.Handlers.CharacterRelationshipInferenceHandler>();
 
 // Cache invalidation handlers
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.CharacterCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
@@ -169,6 +178,9 @@ builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.Chara
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
 builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.WorldDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreCreatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreUpdatedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
+builder.Services.AddScoped<Domain.Events.IDomainEventHandler<Domain.Events.LoreDeletedEvent>, Domain.Events.Handlers.CacheInvalidationHandler>();
 
 // Command Handlers
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateCharacterCommand, Entities.Character>, Application.Commands.CreateCharacterCommandHandler>();

@@ -1,6 +1,7 @@
 using Npc.Api.Entities;
 using Npc.Api.Repositories;
 using Npc.Api.Infrastructure.Audit;
+using Npc.Api.Domain.Events;
 
 namespace Npc.Api.Application.Commands
 {
@@ -14,11 +15,13 @@ namespace Npc.Api.Application.Commands
     {
         private readonly IWorldRepository _repository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public CreateWorldCommandHandler(IWorldRepository repository, IAuditService auditService)
+        public CreateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<World> HandleAsync(CreateWorldCommand command, CancellationToken ct = default)
@@ -34,6 +37,9 @@ namespace Npc.Api.Application.Commands
             // Audit trail
             await _auditService.LogWorldChangeAsync("CREATE", createdWorld.Id, null, createdWorld, "api-user", ct);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new WorldCreatedEvent(createdWorld), ct);
+
             return createdWorld;
         }
     }
@@ -42,11 +48,13 @@ namespace Npc.Api.Application.Commands
     {
         private readonly IWorldRepository _repository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public UpdateWorldCommandHandler(IWorldRepository repository, IAuditService auditService)
+        public UpdateWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<World> HandleAsync(UpdateWorldCommand command, CancellationToken ct = default)
@@ -67,6 +75,9 @@ namespace Npc.Api.Application.Commands
             // Audit trail
             await _auditService.LogWorldChangeAsync("UPDATE", updatedWorld.Id, oldWorld, updatedWorld, "api-user", ct);
 
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new WorldUpdatedEvent(updatedWorld, oldWorld), ct);
+
             return updatedWorld;
         }
     }
@@ -75,11 +86,13 @@ namespace Npc.Api.Application.Commands
     {
         private readonly IWorldRepository _repository;
         private readonly IAuditService _auditService;
+        private readonly IDomainEventDispatcher _eventDispatcher;
 
-        public DeleteWorldCommandHandler(IWorldRepository repository, IAuditService auditService)
+        public DeleteWorldCommandHandler(IWorldRepository repository, IAuditService auditService, IDomainEventDispatcher eventDispatcher)
         {
             _repository = repository;
             _auditService = auditService;
+            _eventDispatcher = eventDispatcher;
         }
 
         public async Task<Unit> HandleAsync(DeleteWorldCommand command, CancellationToken ct = default)
@@ -95,6 +108,9 @@ namespace Npc.Api.Application.Commands
 
             // Audit trail
             await _auditService.LogWorldChangeAsync("DELETE", command.Id, deletedWorld, null, "api-user", ct);
+
+            // Dispatch domain event for database synchronization
+            await _eventDispatcher.DispatchAsync(new WorldDeletedEvent(command.Id, deletedWorld), ct);
 
             return Unit.Value;
         }
