@@ -83,8 +83,43 @@ builder.Services.AddOpenTelemetry()
     });
 
 // Health Check Configuration
+var postgresConnection = builder.Configuration.GetConnectionString("Postgres") ?? "";
+var neo4jUri = neo4jConf.GetValue<string>("Uri") ?? "";
+var neo4jUser = neo4jConf.GetValue<string>("User") ?? "";
+var neo4jPassword = neo4jConf.GetValue<string>("Password") ?? "";
+
 builder.Services.AddHealthChecks()
-    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "ready" });
+    // Basic checks
+    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "ready" })
+
+    // Database health checks
+    .AddNpgSql(postgresConnection, name: "postgresql", tags: new[] { "db", "postgresql", "ready" })
+    .AddNeo4j(neo4jUri, neo4jUser, neo4jPassword, name: "neo4j", tags: new[] { "db", "neo4j", "ready" })
+
+    // Redis health check
+    .AddRedis(redisConnectionString, name: "redis", tags: new[] { "cache", "redis", "ready" })
+
+    // External services health checks
+    .AddUrlGroup(new Uri($"{builder.Configuration.GetSection("Agent").GetValue<string>("BaseUrl")?.TrimEnd('/') ?? "http://localhost:8080"}/health"),
+        name: "agent-service", tags: new[] { "external", "agent" })
+    .AddUrlGroup(new Uri($"{builder.Configuration.GetSection("Tts").GetValue<string>("BaseUrl")?.TrimEnd('/') ?? "http://localhost:8001"}/health"),
+        name: "tts-service", tags: new[] { "external", "tts" })
+    .AddUrlGroup(new Uri($"{builder.Configuration.GetSection("ImageGenerator").GetValue<string>("BaseUrl")?.TrimEnd('/') ?? "http://localhost:8002"}/health"),
+        name: "image-service", tags: new[] { "external", "image" })
+
+    // Custom application health checks
+    .AddCheck<Infrastructure.HealthChecks.ApplicationHealthCheck>("application", tags: new[] { "application", "ready" })
+    .AddCheck<Infrastructure.HealthChecks.CacheHealthCheck>("cache-operations", tags: new[] { "cache", "operations" })
+    .AddCheck<Infrastructure.HealthChecks.ExternalServicesHealthCheck>("external-services", tags: new[] { "external", "services" })
+    .AddCheck<Infrastructure.HealthChecks.DatabaseOperationsHealthCheck>("database-operations", tags: new[] { "db", "operations" });
+
+// Health Checks UI
+builder.Services.AddHealthChecksUI(options =>
+{
+    options.SetEvaluationTimeInSeconds(30); // Check every 30 seconds
+    options.MaximumHistoryEntriesPerEndpoint(50); // Keep 50 history entries
+    options.AddHealthCheckEndpoint("NPC Generator API", "/health/detailed");
+}).AddInMemoryStorage();
 
 
 // Swagger Configuration
@@ -314,8 +349,53 @@ if (app.Environment.IsDevelopment())
 // Endpoints
 app.MapPrometheusScrapingEndpoint("/metrics");
 
-app.MapHealthChecks("/health/ready", new() { Predicate = r => r.Tags.Contains("ready") });
-app.MapHealthChecks("/health/live", new() { Predicate = _ => true });
+// Health Check Endpoints
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+});
+
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => true,
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+});
+
+// Detailed health check endpoints
+app.MapHealthChecks("/health/db", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("db"),
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+});
+
+app.MapHealthChecks("/health/cache", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("cache"),
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+});
+
+app.MapHealthChecks("/health/external", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("external"),
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteResponse
+});
+
+app.MapHealthChecks("/health/detailed", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => true,
+    ResponseWriter = Infrastructure.HealthChecks.HealthCheckResponseWriter.WriteDetailedResponse
+});
+
+// Health Checks UI (only in development for security)
+if (app.Environment.IsDevelopment())
+{
+    app.MapHealthChecksUI(options =>
+    {
+        options.UIPath = "/health-ui";
+        options.ApiPath = "/health-ui-api";
+    });
+}
 
 app.MapControllers();
 
