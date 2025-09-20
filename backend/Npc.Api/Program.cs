@@ -129,6 +129,17 @@ builder.Services.AddAutoMapper(typeof(Program));
 builder.Services.AddExceptionHandler<Infrastructure.Exceptions.GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
+// Redis Cache Configuration
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString;
+    options.InstanceName = "NpcGeneratorService";
+});
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
+    StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddScoped<Infrastructure.Cache.ICacheService, Infrastructure.Cache.RedisCacheService>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddFluentValidationAutoValidation();
@@ -194,22 +205,22 @@ builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Comm
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateCharacterCommand, Entities.Character>, Application.Commands.UpdateCharacterCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteCharacterCommand>, Application.Commands.DeleteCharacterCommandHandler>();
 
-// Character Query Handlers
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.GetCharacterByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.GetCharactersPagedQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersByAgeRangeQuery, IEnumerable<Entities.Character>>, Application.Queries.GetCharactersByAgeRangeQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchCharactersByNameQuery, IEnumerable<Entities.Character>>, Application.Queries.SearchCharactersByNameQueryHandler>();
+// Character Query Handlers - Using Cached Versions
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharacterByIdQuery, Entities.Character?>, Application.Queries.CachedGetCharacterByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersPagedQuery, (IEnumerable<Entities.Character> Items, int TotalCount)>, Application.Queries.CachedGetCharactersPagedQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetCharactersByAgeRangeQuery, IEnumerable<Entities.Character>>, Application.Queries.CachedGetCharactersByAgeRangeQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchCharactersByNameQuery, IEnumerable<Entities.Character>>, Application.Queries.CachedSearchCharactersByNameQueryHandler>();
 
 // World Command Handlers
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateWorldCommand, Entities.World>, Application.Commands.CreateWorldCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.UpdateWorldCommand, Entities.World>, Application.Commands.UpdateWorldCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteWorldCommand>, Application.Commands.DeleteWorldCommandHandler>();
 
-// World Query Handlers
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldByIdQuery, Entities.World?>, Application.Queries.GetWorldByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsPagedQuery, (IEnumerable<Entities.World> Items, int TotalCount)>, Application.Queries.GetWorldsPagedQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsWithLoreQuery, IEnumerable<Entities.World>>, Application.Queries.GetWorldsWithLoreQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldWithLoreByIdQuery, Entities.World?>, Application.Queries.GetWorldWithLoreByIdQueryHandler>();
+// World Query Handlers - Using Cached Versions
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldByIdQuery, Entities.World?>, Application.Queries.CachedGetWorldByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsPagedQuery, (IEnumerable<Entities.World> Items, int TotalCount)>, Application.Queries.CachedGetWorldsPagedQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldsWithLoreQuery, IEnumerable<Entities.World>>, Application.Queries.CachedGetWorldsWithLoreQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetWorldWithLoreByIdQuery, Entities.World?>, Application.Queries.CachedGetWorldWithLoreByIdQueryHandler>();
 
 // Lore Command Handlers
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.CreateLoreCommand, Entities.Lore>, Application.Commands.CreateLoreCommandHandler>();
@@ -217,11 +228,11 @@ builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Comm
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.DeleteLoreCommand>, Application.Commands.DeleteLoreCommandHandler>();
 builder.Services.AddScoped<Application.Commands.ICommandHandler<Application.Commands.SuggestLoreCommand, Dtos.LoreSuggestResponse>, Application.Commands.SuggestLoreCommandHandler>();
 
-// Lore Query Handlers
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByIdQuery, Entities.Lore?>, Application.Queries.GetLoreByIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByWorldIdQuery, IEnumerable<Entities.Lore>>, Application.Queries.GetLoreByWorldIdQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetGeneratedLoreQuery, IEnumerable<Entities.Lore>>, Application.Queries.GetGeneratedLoreQueryHandler>();
-builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchLoreByTextQuery, IEnumerable<Entities.Lore>>, Application.Queries.SearchLoreByTextQueryHandler>();
+// Lore Query Handlers - Using Cached Versions
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByIdQuery, Entities.Lore?>, Application.Queries.CachedGetLoreByIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetLoreByWorldIdQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedGetLoreByWorldIdQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.GetGeneratedLoreQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedGetGeneratedLoreQueryHandler>();
+builder.Services.AddScoped<Application.Queries.IQueryHandler<Application.Queries.SearchLoreByTextQuery, IEnumerable<Entities.Lore>>, Application.Queries.CachedSearchLoreByTextQueryHandler>();
 
 builder.Services.AddHttpClient<IAgentConversationService, AgentConversationService>((sp, http) =>
 {
